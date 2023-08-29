@@ -13,6 +13,7 @@ type Config struct {
 	BtreeDegree       int
 	MemtableCap       int
 	MemtableContainer string
+	SSTableAllInOne   bool
 }
 
 func (c Config) Save() {
@@ -42,6 +43,7 @@ func getDefault() *Config {
 		BtreeDegree:       4,
 		MemtableCap:       10,
 		MemtableContainer: "skiplist",
+		SSTableAllInOne:   false,
 	}
 }
 
