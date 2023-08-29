@@ -10,6 +10,8 @@ import (
 type Config struct {
 	path              string
 	SkiplistMaxHeight int
+	BtreeDegree       int
+	MemtableContainer string
 }
 
 func (c Config) Save() {
@@ -29,13 +31,15 @@ func tryLoad(path string) (*Config, bool) {
 		return nil, false
 	}
 
-	err = yaml.Unmarshal(data, c)
-	return &c, err != nil
+	err = yaml.Unmarshal(data, &c)
+	return &c, err == nil
 }
 
 func getDefault() *Config {
 	return &Config{
 		SkiplistMaxHeight: 10,
+		MemtableContainer: "skiplist",
+		BtreeDegree:       4,
 	}
 }
 

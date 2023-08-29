@@ -1,0 +1,3 @@
+skiplistmaxheight: 10
+btreedegree: 3
+memtablecontainer: skiplist
