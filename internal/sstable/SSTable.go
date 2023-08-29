@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"go-touch-grass/config"
+	"go-touch-grass/internal/memtable"
 	"os"
 	"strconv"
 	"strings"
@@ -53,14 +54,16 @@ func NewSSTable(conf *config.Config) *SSTable {
 		temp := table.FilePathBase + gen + "-SSTable.db"
 		table.DataSegmentPath = temp
 		table.FilterPath = temp
+		table.Index = NewIndex(temp, 0, 0)
 		table.SummarySegmentPath = temp
 		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
+
 	}
 
 	return table
 }
 
-func (sstable *SSTable) WriteNewSSTable() {
+func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) {
 
 	file_offset := uint(0)
 
@@ -74,17 +77,15 @@ func (sstable *SSTable) WriteNewSSTable() {
 	defer data_file.Close()
 	writer := bufio.NewWriter(data_file)
 
-	// Izmeniti da radi sa Memtable strukturom
-
-	for _, v := range CreateDummyData() {
-		key := []byte(v.key)
+	for _, v := range data {
+		key := []byte(v.Key)
 		keySize := uint64(len(key))
-		value := v.value
+		value := v.Data
 		valueSize := uint64(len(value))
-		tombstone := v.tombstone
+		tombstone := v.Tombstone
 		WrittenBytes := 0
 
-		help[string(v.key)] = file_offset
+		help[v.Key] = file_offset
 
 		if err = binary.Write(writer, binary.BigEndian, tombstone); err != nil {
 			panic(err)
@@ -116,8 +117,17 @@ func (sstable *SSTable) WriteNewSSTable() {
 
 	}
 
-	sstable.Index.offset = int64(file_offset)
-
+	// ****************************************************************
+	// TO-DO:
+	// Dodati funkcionalnost za kreiranje Bloomfiltera i kreiranje
+	// Index Summary, takodje treba prepraviti da se podaci ne cuvaju u
+	// mapi jer se gubi sortiranost, bolje je jednostavno podatke cuvati
+	// u 2 razlicita niza
+	// ****************************************************************
+	sstable.Index.offset = 0
+	if isOneFile {
+		sstable.Index.offset = int64(file_offset)
+	}
 	sstable.Index.CreateIndexSegment(help)
 	sstable.CreateTOC()
 	return
@@ -167,7 +177,7 @@ func (sstable *SSTable) Read(offset int64) {
 		panic(err)
 	}
 	// Mozda je bolje vratiti value nazad funkciji koja poziva ovu funkciju
-	fmt.Println(tombstone, "    ", string(key), "   ", string(value))
+	fmt.Println(tombstone, "    ", string(key), "    ", string(value))
 }
 func (sstable *SSTable) CreateTOCFile() {
 	file, err := os.OpenFile(sstable.TOCFilePath, os.O_WRONLY|os.O_CREATE, 0666)
@@ -227,7 +237,7 @@ func GetNextGeneration() int {
 	for _, v := range fileinfo {
 		filename := strings.Split(v.Name(), "-")
 		fmt.Println(filename)
-		if filename[len(filename)-1] == "TOC.txt" {
+		if filename[len(filename)-1] == "TOC.yaml" {
 			t, err := strconv.Atoi(filename[len(filename)-2])
 			if err != nil {
 				panic(err)
@@ -250,7 +260,7 @@ func GetSSTable(generation int) *SSTable {
 	}
 	gen := strconv.Itoa(generation)
 
-	file, err := os.OpenFile("./data/SSTables/usertable-"+gen+"-TOC.txt", os.O_RDONLY, 0666)
+	file, err := os.OpenFile("./data/SSTables/usertable-"+gen+"-TOC.yaml", os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
@@ -267,26 +277,20 @@ func GetSSTable(generation int) *SSTable {
 		files = append(files, scaner.Text())
 	}
 	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
-	if len(files) != 1 {
-		table.Index = NewIndex(files[1], 0, 0)
-		table.DataSegmentPath = files[0]
-		table.FilterPath = files[2]
-		table.SummarySegmentPath = files[3]
-		table.TOCFilePath = table.FilePathBase + gen + "-TOC.txt"
-	} else {
-		table.Index = NewIndex(files[0], 0, 0)
-		table.DataSegmentPath = files[0]
-		table.FilterPath = files[0]
-		table.SummarySegmentPath = files[0]
-		table.TOCFilePath = table.FilePathBase + gen + "-TOC.txt"
-	}
+	toc, _ := tryLoad(file.Name())
+
+	table.Index = NewIndex(toc.IndexPath, int64(toc.IndexOffest), uint64(toc.IndexSize))
+	table.DataSegmentPath = toc.DataPath
+	table.FilterPath = toc.FilterPath
+	table.SummarySegmentPath = toc.SummaryPath
+	table.TOCFilePath = file.Name()
 	return table
 }
 func (toc *TOC) Save(path string) {
 	data, _ := yaml.Marshal(toc)
 	os.WriteFile(path, data, 0644)
 }
-func (toc *TOC) tryLoad(path string) (*TOC, bool) {
+func tryLoad(path string) (*TOC, bool) {
 	c := TOC{}
 	data, err := os.ReadFile(path)
 	if err != nil {

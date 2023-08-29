@@ -8,8 +8,6 @@ import (
 	"os"
 )
 
-var global int = 0
-
 func main() {
 	cli.MainMenu()
 	conf := config.New()
@@ -18,6 +16,8 @@ func main() {
 	scaner := bufio.NewScanner(os.Stdin)
 	for scaner.Scan() {
 		offset := table.Index.Find(scaner.Text())
-		table.Read(offset)
+		if offset != -1 {
+			table.Read(offset)
+		}
 	}
 }

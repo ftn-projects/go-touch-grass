@@ -1,5 +1,5 @@
 skiplistmaxheight: 10
-btreedegree: 4
-memtablecap: 10
-memtablecontainer: btree
-sstableallinone: false
+btreedegree: 3
+memtablecap: 20
+memtablecontainer: skiplist
+sstableallinone: true
