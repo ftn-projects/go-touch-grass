@@ -1,11 +1,12 @@
 package main
 
 import (
-	conf "go-touch-grass/config"
-	"go-touch-grass/pkg/btree"
+	"fmt"
+	"go-touch-grass/internal/memtable"
 )
 
 func main() {
-	btree.New(2)
-	conf.New()
+	mem := memtable.GetExample()
+	fmt.Println("full: ", mem.IsFull())
+	mem.Print()
 }

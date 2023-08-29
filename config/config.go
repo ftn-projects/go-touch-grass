@@ -11,6 +11,7 @@ type Config struct {
 	path              string
 	SkiplistMaxHeight int
 	BtreeDegree       int
+	MemtableCap       int
 	MemtableContainer string
 }
 
@@ -38,8 +39,9 @@ func tryLoad(path string) (*Config, bool) {
 func getDefault() *Config {
 	return &Config{
 		SkiplistMaxHeight: 10,
-		MemtableContainer: "skiplist",
 		BtreeDegree:       4,
+		MemtableCap:       10,
+		MemtableContainer: "skiplist",
 	}
 }
 

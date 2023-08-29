@@ -5,7 +5,7 @@ import (
 )
 
 type BTree struct {
-	rang int
+	t    int
 	size int
 	root *node
 }
@@ -16,22 +16,43 @@ type item struct {
 }
 
 type node struct {
-	is_leaf  bool
+	t        int
 	count    int
-	rang     int
+	is_leaf  bool
 	items    []item
 	children []*node
 }
 
+func New(degree int) *BTree {
+	return &BTree{
+		t: degree,
+	}
+}
+
+func newNode(is_leaf bool, degree int) *node {
+	return &node{
+		is_leaf:  is_leaf,
+		t:        degree,
+		children: make([]*node, 2*degree),
+		items:    make([]item, 2*degree-1),
+	}
+}
+
 func (n *node) putItem(newItem item) (addition bool) {
-	i := n.count - 1 // we start from the rightest element in node (if we need to move keys)
+	i := n.getKeyIndex(newItem.key)
+	if i != -1 {
+		n.items[i] = newItem // updating if existing
+		return
+	}
+
+	i = n.count - 1 // we start from the rightest element in node (if we need to move keys)
 	if !n.is_leaf {
 		// find a child which is going to have the new key
 		for i >= 0 && n.items[i].key > newItem.key {
 			i--
 		}
 		// checking if child is full
-		if n.children[i+1].count == 2*n.rang-1 {
+		if n.children[i+1].count == 2*n.t-1 {
 			// if it is split the child
 			n.splitChild(i+1, n.children[i+1])
 			// checking which child is going to have a key after a split
@@ -43,21 +64,16 @@ func (n *node) putItem(newItem item) (addition bool) {
 		return
 	}
 
-	i = n.getKeyIndex(newItem.key)
-	if i == -1 {
-		i = n.count - 1
-		// find place for a new item and move greater keys
-		for i >= 0 && n.items[i].key > newItem.key {
-			n.items[i+1] = n.items[i]
-			i--
-		}
-		// place a new item
-		n.items[i+1] = newItem
-		n.count++
-		addition = true
-	} else {
-		n.items[i] = newItem // updating if existing
+	i = n.count - 1
+	// find place for a new item and move greater keys
+	for i >= 0 && n.items[i].key > newItem.key {
+		n.items[i+1] = n.items[i]
+		i--
 	}
+	// place a new item
+	addition = true
+	n.items[i+1] = newItem
+	n.count++
 	return
 }
 
@@ -73,22 +89,22 @@ func (n *node) getKeyIndex(key string) int {
 func (n *node) splitChild(i int, child *node) {
 
 	// New node that is going to store t-1 keys of a child
-	newNode := newNode(child.is_leaf, n.rang)
-	newNode.count = n.rang - 1
+	newNode := newNode(child.is_leaf, n.t)
+	newNode.count = n.t - 1
 
 	// Copy keys
-	for j := 0; j < n.rang-1; j++ {
-		newNode.items[j] = child.items[j+child.rang]
+	for j := 0; j < n.t-1; j++ {
+		newNode.items[j] = child.items[j+child.t]
 	}
 
 	// if node was not leaf copy it's children
 	if !child.is_leaf {
-		for j := 0; j < n.rang; j++ {
-			newNode.children[j] = child.children[j+n.rang]
+		for j := 0; j < n.t; j++ {
+			newNode.children[j] = child.children[j+n.t]
 		}
 	}
 	// change number of keys in child
-	child.count = n.rang - 1
+	child.count = n.t - 1
 
 	// creating space for new child
 	for j := n.count; j >= i+1; j-- {
@@ -101,25 +117,10 @@ func (n *node) splitChild(i int, child *node) {
 	for j := n.count - 1; j >= i; j-- {
 		n.items[j+1] = n.items[j]
 	}
-	n.items[i] = child.items[n.rang-1]
+	n.items[i] = child.items[n.t-1]
 
 	// changing number of keys in node
 	n.count++
-}
-
-func New(degree int) *BTree {
-	return &BTree{
-		rang: degree,
-	}
-}
-
-func newNode(is_leaf bool, degree int) *node {
-	return &node{
-		is_leaf:  is_leaf,
-		rang:     degree,
-		children: make([]*node, 2*degree),
-		items:    make([]item, 2*degree-1),
-	}
 }
 
 func (bt *BTree) Put(key string, data interface{}) {
@@ -128,16 +129,16 @@ func (bt *BTree) Put(key string, data interface{}) {
 	newItem := item{key, data}
 
 	if bt.root == nil { // Checking if Tree is empty, if it is add root
-		bt.root = newNode(true, bt.rang)
+		bt.root = newNode(true, bt.t)
 		bt.root.items[0] = newItem
 		bt.root.count++
 		bt.size++
 		return
 	}
 
-	if bt.root.count == 2*bt.root.rang-1 { // checking if root is full
+	if bt.root.count == 2*bt.root.t-1 { // checking if root is full
 		// creating a new root
-		newRoot := newNode(false, bt.rang)
+		newRoot := newNode(false, bt.t)
 
 		// making old root a child of a new root
 		newRoot.children[0] = bt.root
@@ -212,11 +213,11 @@ func (n *node) delete(key string) {
 	} else {
 
 		if n.is_leaf {
-			fmt.Println("Key not founded")
+			fmt.Println("key not found")
 			return
 		}
 		flag := i == n.count
-		if n.children[i].count < n.rang {
+		if n.children[i].count < n.t {
 			n.fill(i)
 		}
 
@@ -240,11 +241,11 @@ func (n *node) findKey(key string) int {
 
 func (n *node) removeFromInternalNode(index int) {
 
-	if n.children[index].count >= n.rang {
+	if n.children[index].count >= n.t {
 		pred := n.getPredcessor(index)
 		n.items[index] = pred
 		n.children[index].delete(pred.key)
-	} else if n.children[index+1].count >= n.rang {
+	} else if n.children[index+1].count >= n.t {
 		succ := n.getSuccessor(index)
 		n.items[index] = succ
 		n.children[index+1].delete(succ.key)
@@ -267,8 +268,8 @@ func (n *node) merge(index int) {
 	// Merging child on index and index + 1
 	var child *node = n.children[index]
 	var sibling *node = n.children[index+1]
-	var degree int = n.rang
-	child.items[n.rang-1] = n.items[index]
+	var degree int = n.t
+	child.items[n.t-1] = n.items[index]
 
 	for i := 0; i < n.children[i+1].count; i++ {
 		child.items[i+degree] = sibling.items[i]
@@ -294,11 +295,11 @@ func (n *node) merge(index int) {
 }
 
 func (n *node) fill(index int) {
-	if index != 0 && n.children[index-1].count >= n.rang {
+	if index != 0 && n.children[index-1].count >= n.t {
 		// if child before index-th has more than t-1 keys
 		n.borrowFromPreviousChild(index)
 
-	} else if index != n.count && n.children[index+1].count >= n.rang {
+	} else if index != n.count && n.children[index+1].count >= n.t {
 		// if child after index-th has more than t-1 keys
 		n.borrowFromNextChild(index)
 	} else {
@@ -379,7 +380,10 @@ func (n *node) getPredcessor(index int) item {
 	return current.items[0]
 }
 
-func (bt *BTree) Find(key string) (interface{}, bool) {
+func (bt *BTree) Get(key string) (interface{}, bool) {
+	if bt.size == 0 {
+		return nil, false
+	}
 	return bt.root.search(key)
 }
 
@@ -419,4 +423,13 @@ func (bt *BTree) GetAll() []interface{} {
 	data := make([]interface{}, bt.size)
 	bt.root.getAll(data, &j)
 	return data
+}
+
+func (bt *BTree) Size() int {
+	return bt.size
+}
+
+func (bt *BTree) Clear() {
+	bt.root = nil
+	bt.size = 0
 }

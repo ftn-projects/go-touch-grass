@@ -36,12 +36,12 @@ func getSkipList(keys string) *SkipList {
 
 func TestFind(t *testing.T) {
 	s := getSkipList("abc")
-	_, found := s.Find("a")
+	_, found := s.Get("a")
 	if !found {
 		t.Errorf("existing not found")
 	}
 
-	_, found = s.Find("d")
+	_, found = s.Get("d")
 	if found {
 		t.Errorf("found non existing")
 	}

@@ -65,7 +65,7 @@ func New(maxHeight int) *SkipList {
 	return &SkipList{maxHeight, 0, head}
 }
 
-func (s *SkipList) Find(key string) (interface{}, bool) {
+func (s *SkipList) Get(key string) (interface{}, bool) {
 	if s.head == nil {
 		return nil, false
 	}
@@ -199,4 +199,13 @@ func (s *SkipList) roll() int {
 		}
 	}
 	return level
+}
+
+func (s *SkipList) Size() int {
+	return s.size
+}
+
+func (s *SkipList) Clear() {
+	s.head = nil
+	s.size = 0
 }
