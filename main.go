@@ -7,6 +7,8 @@ import (
 	"os"
 )
 
+var global int = 0
+
 func main() {
 	conf := config.New()
 	sstable.NewSSTable(conf).WriteNewSSTable()
