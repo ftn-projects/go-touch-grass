@@ -8,6 +8,8 @@ import (
 	"os"
 )
 
+var global int = 0
+
 func main() {
 	cli.MainMenu()
 	conf := config.New()
