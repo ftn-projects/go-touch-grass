@@ -12,6 +12,7 @@ type Config struct {
 	SkiplistMaxHeight int
 	BtreeDegree       int
 	MemtableContainer string
+	SSTableAllInOne   bool
 }
 
 func (c Config) Save() {
@@ -40,6 +41,7 @@ func getDefault() *Config {
 		SkiplistMaxHeight: 10,
 		MemtableContainer: "skiplist",
 		BtreeDegree:       4,
+		SSTableAllInOne:   false,
 	}
 }
 

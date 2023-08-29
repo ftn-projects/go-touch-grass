@@ -7,14 +7,30 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"go-touch-grass/config"
 	"os"
 	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v2"
 )
 
 type ISSTable interface {
 	WriteNewSSTable()
 }
+type TOC struct {
+	DataPath      string
+	FilterPath    string
+	FilterOffset  int
+	FilterSize    uint
+	IndexPath     string
+	IndexOffest   int
+	IndexSize     uint
+	SummaryPath   string
+	SummaryOffset int
+	SummarySize   uint
+}
+
 type SSTable struct {
 	FilePathBase       string
 	DataSegmentPath    string
@@ -24,16 +40,23 @@ type SSTable struct {
 	Index              *Index
 }
 
-func NewSSTable() *SSTable {
-	gen := strconv.Itoa(GetNextGeneration())
+func NewSSTable(conf *config.Config) *SSTable {
 	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
-	table.DataSegmentPath = table.FilePathBase + gen + "-data.db"
-	table.FilterPath = table.FilePathBase + gen + "-filter.db"
-	table.SummarySegmentPath = table.FilePathBase + gen + "-summary.db"
-	table.TOCFilePath = table.FilePathBase + gen + "-TOC.txt"
-	table.Index = &Index{}
-	table.Index.indexfile = table.FilePathBase + gen + "-index.db"
-	table.Index.offset = 0
+	gen := strconv.Itoa(GetNextGeneration())
+	if !conf.SSTableAllInOne {
+		table.DataSegmentPath = table.FilePathBase + gen + "-data.db"
+		table.FilterPath = table.FilePathBase + gen + "-filter.db"
+		table.SummarySegmentPath = table.FilePathBase + gen + "-summary.db"
+		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
+		table.Index = NewIndex(table.FilePathBase+gen+"-index.db", 0, 0)
+	} else {
+		temp := table.FilePathBase + gen + "-SSTable.db"
+		table.DataSegmentPath = temp
+		table.FilterPath = temp
+		table.SummarySegmentPath = temp
+		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
+	}
+
 	return table
 }
 
@@ -92,9 +115,9 @@ func (sstable *SSTable) WriteNewSSTable() {
 		writer.Reset(data_file)
 
 	}
-
+	sstable.Index.offset = int64(file_offset)
 	sstable.Index.CreateIndexSegment(help)
-	sstable.CreateTOCFile()
+	sstable.CreateTOC()
 	return
 }
 
@@ -160,6 +183,17 @@ func (sstable *SSTable) CreateTOCFile() {
 	writer.Flush()
 	writer.Reset(file)
 }
+func (sstable *SSTable) CreateTOC() {
+	toc := &TOC{}
+	toc.DataPath = sstable.DataSegmentPath
+	toc.IndexPath = sstable.Index.indexfile
+	toc.IndexOffest = int(sstable.Index.offset)
+	toc.IndexSize = uint(sstable.Index.size)
+	toc.FilterPath = sstable.FilterPath
+	toc.SummaryPath = sstable.SummarySegmentPath
+	toc.Save(sstable.TOCFilePath)
+}
+
 func CreateDummyData() []*dummy {
 	d := make([]*dummy, 5)
 	d[0] = &dummy{key: "Dimitrije", value: []byte("Gasic"), tombstone: 0}
@@ -172,6 +206,7 @@ func CreateDummyData() []*dummy {
 }
 
 func GetNextGeneration() int {
+	// Dobavlja koja je sledeca generacija sstabele (broj sstabele)
 	file, err := os.Open("./data/SSTables")
 	if err != nil {
 		panic(err)
@@ -202,6 +237,7 @@ func GetNextGeneration() int {
 	}
 	return max + 1
 }
+
 func GetSSTable(generation int) *SSTable {
 	if generation <= 0 {
 		generation = GetNextGeneration() - 1
@@ -218,8 +254,6 @@ func GetSSTable(generation int) *SSTable {
 	}
 
 	defer file.Close()
-	//table := &SSTable{}
-	// reader := bufio.NewReader(file)
 
 	scaner := bufio.NewScanner(file)
 	files := make([]string, 0)
@@ -231,12 +265,32 @@ func GetSSTable(generation int) *SSTable {
 		files = append(files, scaner.Text())
 	}
 	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
-	table.Index = &Index{}
-	table.DataSegmentPath = files[0]
-	table.Index.indexfile = files[1]
-	table.FilterPath = files[2]
-	table.SummarySegmentPath = files[3]
-	table.TOCFilePath = table.FilePathBase + gen + "-TOC.txt"
-	table.Index.offset = 0
+	if len(files) != 1 {
+		table.Index = NewIndex(files[1], 0, 0)
+		table.DataSegmentPath = files[0]
+		table.FilterPath = files[2]
+		table.SummarySegmentPath = files[3]
+		table.TOCFilePath = table.FilePathBase + gen + "-TOC.txt"
+	} else {
+		table.Index = NewIndex(files[0], 0, 0)
+		table.DataSegmentPath = files[0]
+		table.FilterPath = files[0]
+		table.SummarySegmentPath = files[0]
+		table.TOCFilePath = table.FilePathBase + gen + "-TOC.txt"
+	}
 	return table
+}
+func (toc *TOC) Save(path string) {
+	data, _ := yaml.Marshal(toc)
+	os.WriteFile(path, data, 0644)
+}
+func (toc *TOC) tryLoad(path string) (*TOC, bool) {
+	c := TOC{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	err = yaml.Unmarshal(data, &c)
+	return &c, err == nil
 }

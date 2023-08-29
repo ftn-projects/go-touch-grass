@@ -36,6 +36,8 @@ func (index *Index) Find(key string) int64 {
 
 	reader := bufio.NewReader(file)
 
+	file.Seek(index.offset, 0)
+
 	for {
 		el := &IndexElement{}
 		temp := make([]byte, 8)
@@ -58,10 +60,8 @@ func (index *Index) Find(key string) int64 {
 		reader.Read(temp)
 
 		// reading offset
-		// Ovde moze da se ispravi da se proveri i kljuc i tek ako je
-		// taj kljuc onda tek vrsiti konverziju
-		el.Offset = int64(binary.BigEndian.Uint64(temp))
 		if key == el.Key {
+			el.Offset = int64(binary.BigEndian.Uint64(temp))
 			return el.Offset
 		}
 	}
@@ -89,12 +89,15 @@ func (index *Index) ReadIndex() {
 	}
 }
 func (index *Index) CreateIndexSegment(indexes map[string]uint) {
+	offset := uint64(0)
 	file, err := os.OpenFile(index.indexfile, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 	writer := bufio.NewWriter(file)
+
+	file.Seek(index.offset, 0)
 
 	for k, v := range indexes {
 		key := []byte(k)
@@ -110,10 +113,11 @@ func (index *Index) CreateIndexSegment(indexes map[string]uint) {
 		if err := binary.Write(writer, binary.BigEndian, uint64(v)); err != nil {
 			panic(err)
 		}
-
+		offset += offset + uint64(16) + keySize
 		if err := writer.Flush(); err != nil {
 			panic(err)
 		}
 		writer.Reset(file)
 	}
+	index.size = offset
 }
