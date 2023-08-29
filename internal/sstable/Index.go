@@ -1,5 +1,6 @@
 package sstable
 
+// Izmeni za cuvanje offseta
 import (
 	"bufio"
 	"encoding/binary"
@@ -72,8 +73,9 @@ func (index *Index) ReadIndex() {
 		panic(err)
 	}
 	reader := bufio.NewReader(file)
+	i, _ := file.Seek(index.offset, 0)
 
-	for {
+	for i <= int64(index.size)+index.offset {
 		keySizeB := make([]byte, 8)
 		_, err := reader.Read(keySizeB)
 		if err != nil {
@@ -86,10 +88,11 @@ func (index *Index) ReadIndex() {
 		reader.Read(offsetB)
 		offset := binary.BigEndian.Uint64(offsetB)
 		fmt.Println(keySize, "    ", string(keyB), "    ", offset)
+		i += int64(16 + keySize)
 	}
 }
 func (index *Index) CreateIndexSegment(indexes map[string]uint) {
-	offset := uint64(0)
+	offset := int64(0)
 	file, err := os.OpenFile(index.indexfile, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
@@ -97,7 +100,7 @@ func (index *Index) CreateIndexSegment(indexes map[string]uint) {
 	defer file.Close()
 	writer := bufio.NewWriter(file)
 
-	file.Seek(index.offset, 0)
+	offset, _ = file.Seek(index.offset, 0)
 
 	for k, v := range indexes {
 		key := []byte(k)
@@ -113,11 +116,11 @@ func (index *Index) CreateIndexSegment(indexes map[string]uint) {
 		if err := binary.Write(writer, binary.BigEndian, uint64(v)); err != nil {
 			panic(err)
 		}
-		offset += offset + uint64(16) + keySize
+		offset += offset + 16 + int64(keySize)
 		if err := writer.Flush(); err != nil {
 			panic(err)
 		}
 		writer.Reset(file)
 	}
-	index.size = offset
+	index.size = uint64(offset - index.offset)
 }
