@@ -150,75 +150,12 @@ func (sstable *SSTable) Read(offset int64) {
 	if err != nil {
 		panic(err)
 	}
-
-	reader := bufio.NewReader(data_file)
-
 	data_file.Seek(offset, 1)
-
-	timestampBytes := make([]byte, 16)
-	_, err = reader.Read(timestampBytes)
-	if err != nil {
-		panic(err)
-	}
-
-	var timeNanoseconds int64
-	var timeSecond int64
-	timeSecond = int64(binary.BigEndian.Uint64(timestampBytes[:8]))
-	timeNanoseconds = int64(binary.BigEndian.Uint64(timestampBytes[8:]))
-	timestamp := time.Unix(timeSecond, timeNanoseconds)
-	tombstone, err := reader.ReadByte()
-
-	if err != nil {
-		panic(err)
-	}
-
-	keySizeB := make([]byte, 8)
-	_, err = reader.Read(keySizeB)
-
-	if err != nil {
-		panic(err)
-
-	}
-	keySize := binary.BigEndian.Uint64(keySizeB)
-
-	valueSizeB := make([]byte, 8)
-	_, err = reader.Read(valueSizeB)
-	if err != nil {
-		panic(err)
-	}
-	valueSize := binary.BigEndian.Uint64(valueSizeB)
-	key := make([]byte, keySize)
-	value := make([]byte, valueSize)
-	_, err = reader.Read(key)
-
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = reader.Read(value)
-	if err != nil {
-		panic(err)
-	}
+	temp := ReadNextDataRecord(data_file)
 	// Mozda je bolje vratiti value nazad funkciji koja poziva ovu funkciju
-	fmt.Println(tombstone, "    ", timestamp.String(), "     ", string(key), "    ", string(value))
+	fmt.Println(temp.Tombstone, "    ", temp.Timestamp.String(), "     ", temp.Key, "    ", string(temp.Value))
 }
-func (sstable *SSTable) CreateTOCFile() {
-	// OBRISI FUNCKIJU
-	file, err := os.OpenFile(sstable.TOCFilePath, os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
 
-	writer := bufio.NewWriter(file)
-
-	writer.WriteString(sstable.DataSegmentPath + "\n")
-	writer.WriteString(sstable.Index.indexfile + "\n")
-	writer.WriteString(sstable.FilterPath + "\n")
-	writer.WriteString(sstable.SummarySegmentPath + "\n")
-	writer.Flush()
-	writer.Reset(file)
-}
 func (sstable *SSTable) CreateTOC() {
 	// Funkcija radi kreiranje Table of Contents fajla koji se koristi za pozicioniranje
 	// i citanje ostalih struktura
@@ -230,18 +167,6 @@ func (sstable *SSTable) CreateTOC() {
 	toc.FilterPath = sstable.FilterPath
 	toc.SummaryPath = sstable.SummarySegmentPath
 	toc.Save(sstable.TOCFilePath)
-}
-
-func CreateDummyData() []*dummy {
-	// BRISI
-	d := make([]*dummy, 5)
-	d[0] = &dummy{key: "Dimitrije", value: []byte("Gasic"), tombstone: 0}
-	d[1] = &dummy{key: "Masha", value: []byte("Gasifgadsfsdgkjalkjgladshgasdc"), tombstone: 0}
-	d[2] = &dummy{key: "Aleksa", value: []byte("Vukomanovic"), tombstone: 0}
-	d[3] = &dummy{key: "Milica", value: []byte("Misic"), tombstone: 0}
-	d[4] = &dummy{key: "Milan", value: []byte("Arezina"), tombstone: 0}
-
-	return d
 }
 
 func GetNextGeneration() int {
@@ -313,10 +238,12 @@ func GetSSTable(generation int) *SSTable {
 	table.TOCFilePath = file.Name()
 	return table
 }
+
 func (toc *TOC) Save(path string) {
 	data, _ := yaml.Marshal(toc)
 	os.WriteFile(path, data, 0644)
 }
+
 func tryLoad(path string) (*TOC, bool) {
 	c := TOC{}
 	data, err := os.ReadFile(path)
@@ -326,4 +253,56 @@ func tryLoad(path string) (*TOC, bool) {
 
 	err = yaml.Unmarshal(data, &c)
 	return &c, err == nil
+}
+
+func ReadNextDataRecord(file *os.File) DataElement {
+	// funkcija cita sledeci slog u data segmentu
+	// i vraca u strukturi DataElement
+	reader := bufio.NewReader(file)
+	timestampBytes := make([]byte, 16)
+
+	_, err := reader.Read(timestampBytes)
+	if err != nil {
+		panic(err)
+	}
+
+	timeSecond := int64(binary.BigEndian.Uint64(timestampBytes[:8]))
+	timeNanoseconds := int64(binary.BigEndian.Uint64(timestampBytes[8:]))
+	timestamp := time.Unix(timeSecond, timeNanoseconds)
+
+	tombstoneB, err := reader.ReadByte()
+	if err != nil {
+		panic(err)
+	}
+	tombstone := tombstoneB != 0
+
+	keySizeB := make([]byte, 8)
+	_, err = reader.Read(keySizeB)
+
+	if err != nil {
+		panic(err)
+
+	}
+	keySize := binary.BigEndian.Uint64(keySizeB)
+
+	valueSizeB := make([]byte, 8)
+	_, err = reader.Read(valueSizeB)
+	if err != nil {
+		panic(err)
+	}
+	valueSize := binary.BigEndian.Uint64(valueSizeB)
+	key := make([]byte, keySize)
+	value := make([]byte, valueSize)
+	_, err = reader.Read(key)
+
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = reader.Read(value)
+	if err != nil {
+		panic(err)
+	}
+
+	return DataElement{Timestamp: timestamp, Tombstone: tombstone, KeySize: keySize, ValueSize: valueSize, Key: string(key), Value: value}
 }
