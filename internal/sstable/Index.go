@@ -4,6 +4,7 @@ package sstable
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -29,67 +30,41 @@ func NewIndex(filename string, offset int64, size uint64) *Index {
 }
 
 func (index *Index) Find(key string) int64 {
+	// Funkcija vraca offset gde se nalazi u data segmetnu podatak
+	// ili vraca -1 ako ne nadje podatak
 	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
+
 	defer file.Close()
-
-	reader := bufio.NewReader(file)
-
-	file.Seek(index.offset, 0)
-
-	for {
-		el := &IndexElement{}
-		temp := make([]byte, 8)
-
-		_, err := reader.Read(temp)
-		if err != nil {
-			return -1
-		}
-		// reading key size
-		el.KeySize = binary.BigEndian.Uint64(temp)
-		temp = make([]byte, el.KeySize)
-		_, err = reader.Read(temp)
-		if err != nil {
-			panic(err)
-		}
-
-		// reading key
-		el.Key = string(temp)
-		temp = make([]byte, 8)
-		reader.Read(temp)
-
-		// reading offset
-		if key == el.Key {
-			el.Offset = int64(binary.BigEndian.Uint64(temp))
+	i := index.offset
+	for i < index.offset+int64(index.size) {
+		el, bytesRead := ReadNextIndexRecord(file)
+		if el.Key == key {
 			return el.Offset
 		}
+		i += bytesRead
+		file.Seek(i, 0) // mora je izgleda da reader if bufio sam pozicionira file na kraj??
 	}
+	return -1
 }
-func (index *Index) ReadIndex() {
+
+func (index *Index) PrintIndex() {
 	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
-	reader := bufio.NewReader(file)
+
 	i, _ := file.Seek(index.offset, 0)
 
-	for i <= int64(index.size)+index.offset {
-		keySizeB := make([]byte, 8)
-		_, err := reader.Read(keySizeB)
-		if err != nil {
-			return
-		}
-		keySize := binary.BigEndian.Uint64(keySizeB)
-		keyB := make([]byte, keySize)
-		reader.Read(keyB)
-		offsetB := make([]byte, 8)
-		reader.Read(offsetB)
-		offset := binary.BigEndian.Uint64(offsetB)
-		fmt.Println(keySize, "    ", string(keyB), "    ", offset)
-		i += int64(16 + keySize)
+	for i < int64(index.size)+index.offset {
+		el, bytesRead := ReadNextIndexRecord(file)
+		fmt.Println(el.KeySize, "    ", string(el.Key), "    ", el.Offset)
+		i += bytesRead
+		file.Seek(i, 0)
 	}
+	file.Close()
 }
 func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 	offset := int64(0)
@@ -116,11 +91,76 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 		if err := binary.Write(writer, binary.BigEndian, uint64(offsets[i])); err != nil {
 			panic(err)
 		}
-		offset += offset + 16 + int64(keySize)
+		offset += 16 + int64(keySize)
 		if err := writer.Flush(); err != nil {
 			panic(err)
 		}
 		writer.Reset(file)
 	}
 	index.size = uint64(offset - index.offset)
+}
+
+func ReadNextIndexRecord(file *os.File) (*IndexElement, int64) {
+
+	reader := bufio.NewReader(file)
+
+	el := &IndexElement{}
+
+	// reading key size
+	temp := make([]byte, 8)
+	_, err := reader.Read(temp)
+	if err != nil {
+		panic(err)
+	}
+	el.KeySize = binary.BigEndian.Uint64(temp)
+
+	// reading key
+	temp = make([]byte, el.KeySize)
+	_, err = reader.Read(temp)
+	if err != nil {
+		panic(err)
+	}
+	el.Key = string(temp)
+
+	// reading offset
+	temp = make([]byte, 8)
+	_, err = reader.Read(temp)
+	if err != nil {
+		panic(err)
+	}
+	i := 16
+	i += int(el.KeySize)
+	el.Offset = int64(binary.BigEndian.Uint64(temp))
+	return el, int64(i)
+}
+func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound int64) *IndexElement {
+	// Funkcija koja se koristi za pretragu segmenta Index strukture
+	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if lower_bound < index.offset || lower_bound > int64(index.size) {
+		panic(errors.New("Out of range"))
+	}
+
+	if upper_bound > int64(index.size) || upper_bound < index.offset {
+		panic(errors.New("Out of range"))
+	}
+	if lower_bound > upper_bound {
+		panic(errors.New("Lower bound larger than upper bound"))
+	}
+
+	i, _ := file.Seek(lower_bound, 0)
+	for i < upper_bound {
+		el, bytesRead := ReadNextIndexRecord(file)
+		if el.Key == key {
+			return el
+		}
+		i += bytesRead
+		file.Seek(i, 0)
+	}
+
+	return nil
 }
