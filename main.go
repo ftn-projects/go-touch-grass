@@ -20,4 +20,17 @@ func main() {
 			table.Read(offset)
 		}
 	}
+
+	// data := [][]byte{
+	// 	[]byte("data1"),
+	// 	[]byte("data2"),
+	// 	[]byte("data3"),
+	// 	[]byte("data4"),
+	// 	[]byte("data5"),
+	// }
+	// m1 := merkle.NewMerkleTree(&data)
+	// m1.Save("./data/SSTables/metadata.txt")
+	// m2 := merkle.TryLoad("./data/SSTables/metadata.txt")
+	// m2.Save("./data/SSTables/metadata2.txt")
+	// fmt.Println(m2)
 }

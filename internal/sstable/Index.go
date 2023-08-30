@@ -91,7 +91,7 @@ func (index *Index) ReadIndex() {
 		i += int64(16 + keySize)
 	}
 }
-func (index *Index) CreateIndexSegment(indexes map[string]uint) {
+func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 	offset := int64(0)
 	file, err := os.OpenFile(index.indexfile, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
@@ -102,9 +102,9 @@ func (index *Index) CreateIndexSegment(indexes map[string]uint) {
 
 	offset, _ = file.Seek(index.offset, 0)
 
-	for k, v := range indexes {
-		key := []byte(k)
-		keySize := uint64(len(key))
+	for i := 0; i < len(keys); i++ {
+		key := []byte(keys[i])
+		keySize := uint64(len(keys[i]))
 
 		if err := binary.Write(writer, binary.BigEndian, keySize); err != nil {
 			panic(err)
@@ -113,7 +113,7 @@ func (index *Index) CreateIndexSegment(indexes map[string]uint) {
 		if _, err := writer.Write(key); err != nil {
 			panic(err)
 		}
-		if err := binary.Write(writer, binary.BigEndian, uint64(v)); err != nil {
+		if err := binary.Write(writer, binary.BigEndian, uint64(offsets[i])); err != nil {
 			panic(err)
 		}
 		offset += offset + 16 + int64(keySize)
