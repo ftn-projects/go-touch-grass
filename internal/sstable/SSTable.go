@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 )
@@ -67,7 +68,8 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 
 	file_offset := uint(0)
 
-	help := make(map[string]uint)
+	keys := make([]string, len(data))
+	offsets := make([]uint, len(data))
 
 	data_file, err := os.Create(sstable.DataSegmentPath)
 	if err != nil {
@@ -77,15 +79,26 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	defer data_file.Close()
 	writer := bufio.NewWriter(data_file)
 
-	for _, v := range data {
+	for i, v := range data {
 		key := []byte(v.Key)
 		keySize := uint64(len(key))
 		value := v.Data
 		valueSize := uint64(len(value))
 		tombstone := v.Tombstone
+
+		timestamp := time.Now()
+		timestampBytes := make([]byte, 16)
+		binary.BigEndian.PutUint64(timestampBytes[:8], uint64(timestamp.Unix()))
+		binary.BigEndian.PutUint64(timestampBytes[8:], uint64(timestamp.Nanosecond()))
+
 		WrittenBytes := 0
 
-		help[v.Key] = file_offset
+		keys[i] = v.Key
+		offsets[i] = file_offset
+
+		if err = binary.Write(writer, binary.BigEndian, timestampBytes); err != nil {
+			panic(err)
+		}
 
 		if err = binary.Write(writer, binary.BigEndian, tombstone); err != nil {
 			panic(err)
@@ -109,7 +122,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 			panic(err)
 		}
 
-		file_offset += uint(WrittenBytes) + 17 // Broj zapisanih i 2 puta po 8 bajta za zapis velicine segmenata + Tombstone
+		file_offset += uint(WrittenBytes) + 33 // Broj zapisanih i 2 puta po 8 bajta za zapis velicine segmenata + Tombstone
 		if err = writer.Flush(); err != nil {
 			panic(err)
 		}
@@ -119,16 +132,14 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 
 	// ****************************************************************
 	// TO-DO:
-	// Dodati funkcionalnost za kreiranje Bloomfiltera i kreiranje
-	// Index Summary, takodje treba prepraviti da se podaci ne cuvaju u
-	// mapi jer se gubi sortiranost, bolje je jednostavno podatke cuvati
+	// Dodati funkcionalnost za kreiranje Bloomfiltera i kreiranje Index Summary
 	// u 2 razlicita niza
 	// ****************************************************************
 	sstable.Index.offset = 0
 	if isOneFile {
 		sstable.Index.offset = int64(file_offset)
 	}
-	sstable.Index.CreateIndexSegment(help)
+	sstable.Index.CreateIndexSegment(keys, offsets)
 	sstable.CreateTOC()
 	return
 }
@@ -144,7 +155,19 @@ func (sstable *SSTable) Read(offset int64) {
 
 	data_file.Seek(offset, 1)
 
+	timestampBytes := make([]byte, 16)
+	_, err = reader.Read(timestampBytes)
+	if err != nil {
+		panic(err)
+	}
+
+	var timeNanoseconds int64
+	var timeSecond int64
+	timeSecond = int64(binary.BigEndian.Uint64(timestampBytes[:8]))
+	timeNanoseconds = int64(binary.BigEndian.Uint64(timestampBytes[8:]))
+	timestamp := time.Unix(timeSecond, timeNanoseconds)
 	tombstone, err := reader.ReadByte()
+
 	if err != nil {
 		panic(err)
 	}
@@ -177,9 +200,10 @@ func (sstable *SSTable) Read(offset int64) {
 		panic(err)
 	}
 	// Mozda je bolje vratiti value nazad funkciji koja poziva ovu funkciju
-	fmt.Println(tombstone, "    ", string(key), "    ", string(value))
+	fmt.Println(tombstone, "    ", timestamp.String(), "     ", string(key), "    ", string(value))
 }
 func (sstable *SSTable) CreateTOCFile() {
+	// OBRISI FUNCKIJU
 	file, err := os.OpenFile(sstable.TOCFilePath, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
@@ -196,6 +220,8 @@ func (sstable *SSTable) CreateTOCFile() {
 	writer.Reset(file)
 }
 func (sstable *SSTable) CreateTOC() {
+	// Funkcija radi kreiranje Table of Contents fajla koji se koristi za pozicioniranje
+	// i citanje ostalih struktura
 	toc := &TOC{}
 	toc.DataPath = sstable.DataSegmentPath
 	toc.IndexPath = sstable.Index.indexfile
@@ -207,6 +233,7 @@ func (sstable *SSTable) CreateTOC() {
 }
 
 func CreateDummyData() []*dummy {
+	// BRISI
 	d := make([]*dummy, 5)
 	d[0] = &dummy{key: "Dimitrije", value: []byte("Gasic"), tombstone: 0}
 	d[1] = &dummy{key: "Masha", value: []byte("Gasifgadsfsdgkjalkjgladshgasdc"), tombstone: 0}
