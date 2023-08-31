@@ -1,12 +1,7 @@
 package main
 
-import (
-	"fmt"
-	"go-touch-grass/internal/memtable"
-)
+import "go-touch-grass/cli"
 
 func main() {
-	mem := memtable.GetExample()
-	fmt.Println("full: ", mem.IsFull())
-	mem.Print()
+	cli.MainMenu()
 }
