@@ -2,17 +2,19 @@ package main
 
 import (
 	"bufio"
-	"go-touch-grass/cli"
 	"go-touch-grass/config"
+	"go-touch-grass/internal/memtable"
 	"go-touch-grass/internal/sstable"
 	"os"
 )
 
 func main() {
-	cli.MainMenu()
 	conf := config.New()
-	sstable.NewSSTable(conf).WriteNewSSTable()
+	mem := memtable.GetExample()
+	sstable.NewSSTable(conf).WriteNewSSTable(mem.GetAll(), conf.SSTableAllInOne)
 	table := sstable.GetSSTable(0)
+	table.Index.PrintIndex()
+
 	scaner := bufio.NewScanner(os.Stdin)
 	for scaner.Scan() {
 		offset := table.Index.Find(scaner.Text())

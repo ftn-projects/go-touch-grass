@@ -43,6 +43,7 @@ type SSTable struct {
 }
 
 func NewSSTable(conf *config.Config) *SSTable {
+	// Creating file paths for new SSTable
 	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
 	gen := strconv.Itoa(GetNextGeneration())
 	if !conf.SSTableAllInOne {
@@ -65,7 +66,13 @@ func NewSSTable(conf *config.Config) *SSTable {
 }
 
 func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) {
-
+	// Function used for making SSTable on Disk
+	// Getting data from memtable (traversing a BTree or SkipList)
+	// Saving data in data segment, creating index and serializing it
+	// Creating bloomfilter and summary structures and saving them
+	// Parameters:
+	//	- data : data from memtable
+	//	- isOneFile : if we should save all structures in one file or separate
 	file_offset := uint(0)
 
 	keys := make([]string, len(data))
@@ -133,7 +140,6 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	// ****************************************************************
 	// TO-DO:
 	// Dodati funkcionalnost za kreiranje Bloomfiltera i kreiranje Index Summary
-	// u 2 razlicita niza
 	// ****************************************************************
 	sstable.Index.offset = 0
 	if isOneFile {
@@ -157,8 +163,7 @@ func (sstable *SSTable) Read(offset int64) {
 }
 
 func (sstable *SSTable) CreateTOC() {
-	// Funkcija radi kreiranje Table of Contents fajla koji se koristi za pozicioniranje
-	// i citanje ostalih struktura
+	// Creating Table of Contents and saving it in file
 	toc := &TOC{}
 	toc.DataPath = sstable.DataSegmentPath
 	toc.IndexPath = sstable.Index.indexfile
@@ -170,7 +175,9 @@ func (sstable *SSTable) CreateTOC() {
 }
 
 func GetNextGeneration() int {
-	// Dobavlja koja je sledeca generacija sstabele (broj sstabele)
+	// Utility function used for getting the next number for generation
+	// Return:
+	// 	- Last generation + 1
 	file, err := os.Open("./data/SSTables")
 	if err != nil {
 		panic(err)
@@ -203,6 +210,12 @@ func GetNextGeneration() int {
 }
 
 func GetSSTable(generation int) *SSTable {
+	// Loading a SSTable attributes such as TOC, FilePaths...
+	// DataSegment/Index are never loaded fully after serializing them on Disk
+	// Parameters:
+	//	- generation : selecting a sstable to pick, if it is 0 we return the last made SSTable
+	// Return:
+	//	- Pointer to the loaded SSTable
 	if generation <= 0 {
 		generation = GetNextGeneration() - 1
 	}
@@ -240,11 +253,13 @@ func GetSSTable(generation int) *SSTable {
 }
 
 func (toc *TOC) Save(path string) {
+	// Function used for saving Table of Contents file
 	data, _ := yaml.Marshal(toc)
 	os.WriteFile(path, data, 0644)
 }
 
 func tryLoad(path string) (*TOC, bool) {
+	// Function used for loading Table of Contents file
 	c := TOC{}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -256,8 +271,11 @@ func tryLoad(path string) (*TOC, bool) {
 }
 
 func ReadNextDataRecord(file *os.File) DataElement {
-	// funkcija cita sledeci slog u data segmentu
-	// i vraca u strukturi DataElement
+	// Utility function used for reading next element in data segment
+	// Parameters:
+	//	- file : opened file that is already seeked on a corresponding postion
+	// Return:
+	//	- data record
 	reader := bufio.NewReader(file)
 	timestampBytes := make([]byte, 16)
 
@@ -306,3 +324,7 @@ func ReadNextDataRecord(file *os.File) DataElement {
 
 	return DataElement{Timestamp: timestamp, Tombstone: tombstone, KeySize: keySize, ValueSize: valueSize, Key: string(key), Value: value}
 }
+
+// func GetSSTableFromTOC(toc *TOC) *SSTable {
+
+// }

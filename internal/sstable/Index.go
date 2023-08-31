@@ -30,8 +30,12 @@ func NewIndex(filename string, offset int64, size uint64) *Index {
 }
 
 func (index *Index) Find(key string) int64 {
-	// Funkcija vraca offset gde se nalazi u data segmetnu podatak
-	// ili vraca -1 ako ne nadje podatak
+	// Function used for searching key in index structure by iterating through
+	// whole index strcture
+	// Parameters:
+	//	- key : A key that we are searching for
+	// Return:
+	//	- offset where should we seek for our data or -1 key was not found
 	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
@@ -51,6 +55,8 @@ func (index *Index) Find(key string) int64 {
 }
 
 func (index *Index) PrintIndex() {
+	// Function used for testing
+	// Iterating through index structure and printing all values
 	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
@@ -67,6 +73,13 @@ func (index *Index) PrintIndex() {
 	file.Close()
 }
 func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
+	// Function used for creating index structure/segment
+	// It can be in same file as data or in different file
+	// index structure attributes are used for getting file path, offset where to write
+	// Parameters:
+	//	- keys : sorted arrays of key that index should contains
+	//	- offsets : arrays of number that correspond to a key at same postion and postion of data in data segment
+
 	offset := int64(0)
 	file, err := os.OpenFile(index.indexfile, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
@@ -101,7 +114,11 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 }
 
 func ReadNextIndexRecord(file *os.File) (*IndexElement, int64) {
-
+	// Utility function used for reading next key in index structure
+	// Paramteres :
+	//	-opened file already Seeked on position
+	// Return value :
+	// 	-pointer to index element and number of bytes that were read
 	reader := bufio.NewReader(file)
 
 	el := &IndexElement{}
@@ -134,7 +151,13 @@ func ReadNextIndexRecord(file *os.File) (*IndexElement, int64) {
 	return el, int64(i)
 }
 func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound int64) *IndexElement {
-	// Funkcija koja se koristi za pretragu segmenta Index strukture
+	// Function used for scaning a part of index structure
+	// Is used in combination with Summary structure
+	// Parameters :
+	//	- key : A key that we are searching for
+	//	- lower_bound : offset in file from where we begin our scanning
+	//	- upper_bound : offset where search would end if key was not found
+	// Return Value : Index element which contains: Key, KeySize and Offset of that Record in Data Segment
 	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
 
 	if err != nil {
