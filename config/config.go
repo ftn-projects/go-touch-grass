@@ -13,6 +13,8 @@ type Config struct {
 	BtreeDegree       int
 	MemtableCap       int
 	MemtableContainer string
+	FilterPrecision   float64
+	SummaryStep       int
 }
 
 func (c Config) Save() {
@@ -42,6 +44,8 @@ func getDefault() *Config {
 		BtreeDegree:       4,
 		MemtableCap:       10,
 		MemtableContainer: "skiplist",
+		FilterPrecision:   0.01,
+		SummaryStep:       5,
 	}
 }
 
