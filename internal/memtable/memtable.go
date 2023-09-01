@@ -99,8 +99,8 @@ func (mt *Memtable) Print() {
 	fmt.Println("]")
 }
 
-func GetExample() *Memtable {
-	mem := New(conf.New())
+func GetExample(config *conf.Config) *Memtable {
+	mem := New(config)
 	mem.Put("aaa", []byte("aaa"))
 	mem.Put("bbb", []byte("bbb"))
 	mem.Put("ccc", []byte("ccc"))
