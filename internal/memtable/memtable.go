@@ -3,10 +3,9 @@ package memtable
 import (
 	"fmt"
 	conf "go-touch-grass/config"
+	"go-touch-grass/internal/hash"
 	"go-touch-grass/pkg/btree"
 	"go-touch-grass/pkg/skiplist"
-	"hash"
-	"hash/crc32"
 	"time"
 )
 
@@ -29,7 +28,6 @@ type Record struct {
 type Memtable struct {
 	table Container
 	cap   int
-	h     hash.Hash32
 }
 
 func New(c *conf.Config) *Memtable {
@@ -43,21 +41,12 @@ func New(c *conf.Config) *Memtable {
 	default:
 		panic("error in config file (MemtableContainer field)")
 	}
-	return &Memtable{table, c.MemtableCap, crc32.NewIEEE()}
-}
-
-func (mt *Memtable) getCrc(key string, data []byte) uint32 {
-	mt.h.Write([]byte(key))
-	mt.h.Write(data)
-	sum := mt.h.Sum32()
-	mt.h.Reset()
-	fmt.Println(sum)
-	return sum
+	return &Memtable{table, c.MemtableCap}
 }
 
 func (mt *Memtable) putRecord(key string, data []byte, tombstone bool) {
 	record := Record{
-		Crc:       mt.getCrc(key, data),
+		Crc:       hash.GetCrc(key, data),
 		Timestamp: time.Now(),
 		Tombstone: tombstone,
 		Key:       key,

@@ -1,24 +1,25 @@
 package bloom
 
 import (
+	"go-touch-grass/internal/hash"
 	"go-touch-grass/internal/util"
 	"io"
 	"math"
 )
 
 type BloomFilter struct {
-	m, k   uint64 // k - broj hash f-ija, m - velicina niza
+	m, k   uint32 // k - broj hash f-ija, m - velicina niza
 	filter []uint16
-	hashes []HashWithSeed
+	hashes []hash.SeededHash
 }
 
 // kreiranje novog bloom filtera
 func New(n uint64, p float64) *BloomFilter {
 	init := &BloomFilter{}
-	init.m = -uint64(math.Ceil((float64(n) * math.Log(p)) / math.Pow(math.Log(2), 2)))
-	init.k = uint64(math.Ceil(float64(init.m) / float64(n) * math.Log(2)))
+	init.m = -uint32(math.Ceil((float64(n) * math.Log(p)) / math.Pow(math.Log(2), 2)))
+	init.k = uint32(math.Ceil(float64(init.m) / float64(n) * math.Log(2)))
 	init.filter = make([]uint16, init.m)
-	init.hashes = CreateHashes(init.k)
+	init.hashes = hash.NewHashes(uint(init.k))
 	return init
 }
 
@@ -26,7 +27,7 @@ func New(n uint64, p float64) *BloomFilter {
 func (bf *BloomFilter) Add(key string) {
 	b := []byte(key)
 	for _, h := range bf.hashes {
-		i := h.hash(b) % bf.m
+		i := uint32(h.Hash(b)) % bf.m
 		bf.filter[i] = 1
 	}
 }
@@ -35,7 +36,7 @@ func (bf *BloomFilter) Add(key string) {
 func (bf *BloomFilter) Has(key string) bool {
 	b := []byte(key)
 	for _, h := range bf.hashes {
-		i := h.hash(b) % bf.m
+		i := uint32(h.Hash(b)) % bf.m
 		if bf.filter[i] == 0 {
 			return false
 		}
@@ -52,20 +53,20 @@ func (bf *BloomFilter) Serialize(w io.Writer) int {
 	for _, h := range bf.hashes {
 		util.WriteBytes(h.Seed, w)
 	}
-	return 16 + 2*int(bf.m+bf.k*16)
+	return 8 + 2*int(bf.m+bf.k*16)
 }
 
 func Deserialize(r io.Reader) *BloomFilter {
-	m, _ := util.ReadUint64(r)
-	k, _ := util.ReadUint64(r)
+	m, _ := util.ReadUint32(r)
+	k, _ := util.ReadUint32(r)
 	filter := make([]uint16, m)
-	hashes := make([]HashWithSeed, k)
-	for i := uint64(0); i < m; i++ {
+	hashes := make([]hash.SeededHash, k)
+	for i := uint32(0); i < m; i++ {
 		filter[i], _ = util.ReadUint16(r)
 	}
-	for i := uint64(0); i < k; i++ {
+	for i := uint32(0); i < k; i++ {
 		seed, _ := util.ReadBytes(32, r)
-		hashes[i] = HashWithSeed{Seed: seed}
+		hashes[i] = hash.SeededHash{Seed: seed}
 	}
 	return &BloomFilter{m, k, filter, hashes}
 }
