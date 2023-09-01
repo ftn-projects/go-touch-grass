@@ -114,6 +114,9 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 		keys[i] = v.Key
 		offsets[i] = file_offset
 
+		if err = binary.Write(writer, binary.BigEndian, v.Crc); err != nil {
+			panic(err)
+		}
 		if err = binary.Write(writer, binary.BigEndian, timestampBytes); err != nil {
 			panic(err)
 		}
@@ -140,7 +143,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 			panic(err)
 		}
 
-		file_offset += uint64(WrittenBytes) + 33 // Broj zapisanih i 2 puta po 8 bajta za zapis velicine segmenata + Tombstone
+		file_offset += uint64(WrittenBytes) + 37 // Broj zapisanih i 2 puta po 8 bajta za zapis velicine segmenata + Tombstone
 		if err = writer.Flush(); err != nil {
 			panic(err)
 		}
@@ -201,7 +204,7 @@ func (sstable *SSTable) Read(offset int64) {
 	data_file.Seek(offset, 1)
 	temp := ReadNextDataRecord(data_file)
 	// Mozda je bolje vratiti value nazad funkciji koja poziva ovu funkciju
-	fmt.Println(temp.Tombstone, "    ", temp.Timestamp.String(), "     ", temp.Key, "    ", string(temp.Value))
+	fmt.Println(temp.CRC, "   ", temp.Tombstone, "    ", temp.Timestamp.String(), "     ", temp.Key, "    ", string(temp.Value))
 }
 
 func (sstable *SSTable) CreateTOC() {
@@ -316,9 +319,16 @@ func ReadNextDataRecord(file *os.File) DataElement {
 	// Return:
 	//	- data record
 	reader := bufio.NewReader(file)
+	crc := make([]byte, 4)
+
 	timestampBytes := make([]byte, 16)
 
-	_, err := reader.Read(timestampBytes)
+	_, err := reader.Read(crc)
+	crcv := binary.BigEndian.Uint32(crc)
+	if err != nil {
+		panic(err)
+	}
+	_, err = reader.Read(timestampBytes)
 	if err != nil {
 		panic(err)
 	}
@@ -361,7 +371,7 @@ func ReadNextDataRecord(file *os.File) DataElement {
 		panic(err)
 	}
 
-	return DataElement{Timestamp: timestamp, Tombstone: tombstone, KeySize: keySize, ValueSize: valueSize, Key: string(key), Value: value}
+	return DataElement{CRC: crcv, Timestamp: timestamp, Tombstone: tombstone, KeySize: keySize, ValueSize: valueSize, Key: string(key), Value: value}
 }
 
 func GetSSTable(toc *TOC) *SSTable {
