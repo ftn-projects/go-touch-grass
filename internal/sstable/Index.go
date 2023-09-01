@@ -40,16 +40,15 @@ func (index *Index) Find(key string) int64 {
 	if err != nil {
 		panic(err)
 	}
-
 	defer file.Close()
 	i := index.offset
 	for i < index.offset+int64(index.size) {
+		file.Seek(i, 0) // mora je izgleda da reader if bufio sam pozicionira file na kraj??
 		el, bytesRead := ReadNextIndexRecord(file)
 		if el.Key == key {
 			return el.Offset
 		}
 		i += bytesRead
-		file.Seek(i, 0) // mora je izgleda da reader if bufio sam pozicionira file na kraj??
 	}
 	return -1
 }

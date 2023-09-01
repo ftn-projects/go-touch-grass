@@ -2,18 +2,17 @@ package main
 
 import (
 	"bufio"
-	"go-touch-grass/config"
-	"go-touch-grass/internal/memtable"
 	"go-touch-grass/internal/sstable"
 	"os"
 )
 
 func main() {
-	conf := config.New()
-	mem := memtable.GetExample()
-	sstable.NewSSTable(conf).WriteNewSSTable(mem.GetAll(), conf.SSTableAllInOne)
-	table := sstable.GetSSTable(0)
-	table.Index.PrintIndex()
+	// conf := config.New()
+	// mem := memtable.GetExample()
+	// sstable.NewSSTable(conf).WriteNewSSTable(mem.GetAll(), conf.SSTableAllInOne)
+	toc := sstable.GetTOC(0)
+	table := sstable.GetSSTable(toc)
+	table.Index.Find("aaa")
 
 	scaner := bufio.NewScanner(os.Stdin)
 	for scaner.Scan() {
@@ -23,16 +22,4 @@ func main() {
 		}
 	}
 
-	// data := [][]byte{
-	// 	[]byte("data1"),
-	// 	[]byte("data2"),
-	// 	[]byte("data3"),
-	// 	[]byte("data4"),
-	// 	[]byte("data5"),
-	// }
-	// m1 := merkle.NewMerkleTree(&data)
-	// m1.Save("./data/SSTables/metadata.txt")
-	// m2 := merkle.TryLoad("./data/SSTables/metadata.txt")
-	// m2.Save("./data/SSTables/metadata2.txt")
-	// fmt.Println(m2)
 }

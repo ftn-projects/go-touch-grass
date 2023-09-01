@@ -17,11 +17,9 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type ISSTable interface {
-	WriteNewSSTable()
-}
 type TOC struct {
 	DataPath      string
+	DataSize      uint
 	FilterPath    string
 	FilterOffset  int
 	FilterSize    uint
@@ -36,6 +34,7 @@ type TOC struct {
 type SSTable struct {
 	FilePathBase       string
 	DataSegmentPath    string
+	DataSegmentSize    uint
 	SummarySegmentPath string
 	FilterPath         string
 	TOCFilePath        string
@@ -44,6 +43,7 @@ type SSTable struct {
 
 func NewSSTable(conf *config.Config) *SSTable {
 	// Creating file paths for new SSTable
+	// Modify it for LSM Tree levels
 	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
 	gen := strconv.Itoa(GetNextGeneration())
 	if !conf.SSTableAllInOne {
@@ -141,6 +141,8 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	// TO-DO:
 	// Dodati funkcionalnost za kreiranje Bloomfiltera i kreiranje Index Summary
 	// ****************************************************************
+	sstable.DataSegmentSize = file_offset
+
 	sstable.Index.offset = 0
 	if isOneFile {
 		sstable.Index.offset = int64(file_offset)
@@ -171,6 +173,7 @@ func (sstable *SSTable) CreateTOC() {
 	toc.IndexSize = uint(sstable.Index.size)
 	toc.FilterPath = sstable.FilterPath
 	toc.SummaryPath = sstable.SummarySegmentPath
+	toc.DataSize = sstable.DataSegmentSize
 	toc.Save(sstable.TOCFilePath)
 }
 
@@ -195,7 +198,6 @@ func GetNextGeneration() int {
 	max := 1
 	for _, v := range fileinfo {
 		filename := strings.Split(v.Name(), "-")
-		fmt.Println(filename)
 		if filename[len(filename)-1] == "TOC.yaml" {
 			t, err := strconv.Atoi(filename[len(filename)-2])
 			if err != nil {
@@ -209,13 +211,12 @@ func GetNextGeneration() int {
 	return max + 1
 }
 
-func GetSSTable(generation int) *SSTable {
-	// Loading a SSTable attributes such as TOC, FilePaths...
-	// DataSegment/Index are never loaded fully after serializing them on Disk
+func GetTOC(generation int) *TOC {
+	// Loading a TOC
 	// Parameters:
 	//	- generation : selecting a sstable to pick, if it is 0 we return the last made SSTable
 	// Return:
-	//	- Pointer to the loaded SSTable
+	//	- Pointer to TOC
 	if generation <= 0 {
 		generation = GetNextGeneration() - 1
 	}
@@ -241,15 +242,9 @@ func GetSSTable(generation int) *SSTable {
 		}
 		files = append(files, scaner.Text())
 	}
-	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
 	toc, _ := tryLoad(file.Name())
 
-	table.Index = NewIndex(toc.IndexPath, int64(toc.IndexOffest), uint64(toc.IndexSize))
-	table.DataSegmentPath = toc.DataPath
-	table.FilterPath = toc.FilterPath
-	table.SummarySegmentPath = toc.SummaryPath
-	table.TOCFilePath = file.Name()
-	return table
+	return toc
 }
 
 func (toc *TOC) Save(path string) {
@@ -325,6 +320,13 @@ func ReadNextDataRecord(file *os.File) DataElement {
 	return DataElement{Timestamp: timestamp, Tombstone: tombstone, KeySize: keySize, ValueSize: valueSize, Key: string(key), Value: value}
 }
 
-// func GetSSTableFromTOC(toc *TOC) *SSTable {
+func GetSSTable(toc *TOC) *SSTable {
+	t := &SSTable{}
+	t.DataSegmentSize = toc.DataSize
+	t.DataSegmentPath = toc.DataPath
+	t.FilterPath = toc.FilterPath
+	t.SummarySegmentPath = toc.SummaryPath
+	t.Index = NewIndex(toc.IndexPath, int64(toc.IndexOffest), uint64(toc.IndexSize))
 
-// }
+	return t
+}
