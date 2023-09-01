@@ -21,4 +21,20 @@ func main() {
 	// 		}
 	// 	}
 	// }
+
+	//IGNORE OVO -Arezina
+	// myCache := cache.NewCache(5)
+	// myCache.Add("key1", []byte("value1"))
+	// myCache.Add("key2", []byte("value2"))
+	// myCache.Add("key3", []byte("value3"))
+
+	// //I have become death, destroyer of key3
+	// myCache.Remove("key3")
+
+	// myCache.Add("key4", []byte("value4"))
+	// myCache.Add("key5", []byte("value5"))
+	// myCache.Add("key6", []byte("value6"))
+	// myCache.Add("key7", []byte("value7"))
+
+	// myCache.PrintCache()
 }
