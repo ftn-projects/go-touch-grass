@@ -71,7 +71,7 @@ func (index *Index) PrintIndex() {
 	}
 	file.Close()
 }
-func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
+func (index *Index) CreateIndexSegment(keys []string, offsets []uint64) []uint64 {
 	// Function used for creating index structure/segment
 	// It can be in same file as data or in different file
 	// index structure attributes are used for getting file path, offset where to write
@@ -80,6 +80,8 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 	//	- offsets : arrays of number that correspond to a key at same postion and postion of data in data segment
 
 	offset := int64(0)
+	key_offsets := make([]uint64, len(keys))
+
 	file, err := os.OpenFile(index.indexfile, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
@@ -92,7 +94,7 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 	for i := 0; i < len(keys); i++ {
 		key := []byte(keys[i])
 		keySize := uint64(len(keys[i]))
-
+		key_offsets[i] = uint64(offset)
 		if err := binary.Write(writer, binary.BigEndian, keySize); err != nil {
 			panic(err)
 		}
@@ -103,6 +105,7 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 		if err := binary.Write(writer, binary.BigEndian, uint64(offsets[i])); err != nil {
 			panic(err)
 		}
+
 		offset += 16 + int64(keySize)
 		if err := writer.Flush(); err != nil {
 			panic(err)
@@ -110,6 +113,7 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint) {
 		writer.Reset(file)
 	}
 	index.size = uint64(offset - index.offset)
+	return key_offsets
 }
 
 func ReadNextIndexRecord(file *os.File) (*IndexElement, int64) {
@@ -163,11 +167,11 @@ func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound 
 		panic(err)
 	}
 
-	if lower_bound < index.offset || lower_bound > int64(index.size) {
+	if lower_bound < index.offset || lower_bound > int64(index.size+uint64(index.offset)) {
 		panic(errors.New("Out of range"))
 	}
 
-	if upper_bound > int64(index.size) || upper_bound < index.offset {
+	if upper_bound > int64(index.size+uint64(index.offset)) || upper_bound < index.offset {
 		panic(errors.New("Out of range"))
 	}
 	if lower_bound > upper_bound {
@@ -175,7 +179,7 @@ func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound 
 	}
 
 	i, _ := file.Seek(lower_bound, 0)
-	for i < upper_bound {
+	for i <= upper_bound {
 		el, bytesRead := ReadNextIndexRecord(file)
 		if el.Key == key {
 			return el

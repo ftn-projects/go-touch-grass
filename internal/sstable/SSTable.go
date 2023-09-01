@@ -8,7 +8,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"go-touch-grass/config"
+	"go-touch-grass/internal/bloom"
 	"go-touch-grass/internal/memtable"
+	"go-touch-grass/internal/summary"
 	"os"
 	"strconv"
 	"strings"
@@ -19,24 +21,28 @@ import (
 
 type TOC struct {
 	DataPath      string
-	DataSize      uint
+	DataSize      uint64
 	FilterPath    string
-	FilterOffset  int
-	FilterSize    uint
+	FilterOffset  int64
+	FilterSize    uint64
 	IndexPath     string
-	IndexOffest   int
-	IndexSize     uint
+	IndexOffest   int64
+	IndexSize     uint64
 	SummaryPath   string
-	SummaryOffset int
-	SummarySize   uint
+	SummaryOffset int64
+	SummarySize   uint64
 }
 
 type SSTable struct {
 	FilePathBase       string
 	DataSegmentPath    string
-	DataSegmentSize    uint
+	DataSegmentSize    uint64
 	SummarySegmentPath string
+	SummaryOffset      int64
+	SummarySize        uint64
 	FilterPath         string
+	FilterOffset       int64
+	FilterSize         uint64
 	TOCFilePath        string
 	Index              *Index
 }
@@ -45,7 +51,7 @@ func NewSSTable(conf *config.Config) *SSTable {
 	// Creating file paths for new SSTable
 	// Modify it for LSM Tree levels
 	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
-	gen := strconv.Itoa(GetNextGeneration())
+	gen := fmt.Sprintf("%03d", GetNextGeneration())
 	if !conf.SSTableAllInOne {
 		table.DataSegmentPath = table.FilePathBase + gen + "-data.db"
 		table.FilterPath = table.FilePathBase + gen + "-filter.db"
@@ -73,10 +79,12 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	// Parameters:
 	//	- data : data from memtable
 	//	- isOneFile : if we should save all structures in one file or separate
-	file_offset := uint(0)
+	file_offset := uint64(0)
 
 	keys := make([]string, len(data))
-	offsets := make([]uint, len(data))
+	offsets := make([]uint64, len(data))
+
+	bf := bloom.New(uint64(len(data)), 0.001)
 
 	data_file, err := os.Create(sstable.DataSegmentPath)
 	if err != nil {
@@ -87,13 +95,16 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	writer := bufio.NewWriter(data_file)
 
 	for i, v := range data {
+		// Adding a key to bloom filter
+		bf.Add(v.Key)
+
 		key := []byte(v.Key)
 		keySize := uint64(len(key))
 		value := v.Data
 		valueSize := uint64(len(value))
 		tombstone := v.Tombstone
 
-		timestamp := time.Now()
+		timestamp := v.Timestamp
 		timestampBytes := make([]byte, 16)
 		binary.BigEndian.PutUint64(timestampBytes[:8], uint64(timestamp.Unix()))
 		binary.BigEndian.PutUint64(timestampBytes[8:], uint64(timestamp.Nanosecond()))
@@ -123,13 +134,13 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 			panic(err)
 		}
 
-		file_offset += uint(WrittenBytes)
+		file_offset += uint64(WrittenBytes)
 
 		if WrittenBytes, err = writer.Write(value); err != nil {
 			panic(err)
 		}
 
-		file_offset += uint(WrittenBytes) + 33 // Broj zapisanih i 2 puta po 8 bajta za zapis velicine segmenata + Tombstone
+		file_offset += uint64(WrittenBytes) + 33 // Broj zapisanih i 2 puta po 8 bajta za zapis velicine segmenata + Tombstone
 		if err = writer.Flush(); err != nil {
 			panic(err)
 		}
@@ -137,17 +148,46 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 
 	}
 
-	// ****************************************************************
-	// TO-DO:
-	// Dodati funkcionalnost za kreiranje Bloomfiltera i kreiranje Index Summary
-	// ****************************************************************
-	sstable.DataSegmentSize = file_offset
-
+	sstable.DataSegmentSize = uint64(file_offset)
+	var key_offsets []uint64
+	// Creating index segment
 	sstable.Index.offset = 0
 	if isOneFile {
 		sstable.Index.offset = int64(file_offset)
+		key_offsets = sstable.Index.CreateIndexSegment(keys, offsets)
+		file_offset += sstable.Index.size
+		data_file.Seek(int64(file_offset), 0)
+	} else {
+		key_offsets = sstable.Index.CreateIndexSegment(keys, offsets)
 	}
-	sstable.Index.CreateIndexSegment(keys, offsets)
+
+	// Creating Summary
+	s := summary.New(4, keys, key_offsets)
+	sstable.SummaryOffset = 0
+	if isOneFile {
+		sstable.SummaryOffset = int64(file_offset)
+		sstable.SummarySize = uint64(s.Serialize(data_file))
+		file_offset += sstable.SummarySize
+		data_file.Seek(int64(file_offset), 0)
+	} else {
+		sfile, _ := os.Create(sstable.SummarySegmentPath)
+		sstable.SummarySize = uint64(s.Serialize(sfile))
+		sfile.Close()
+	}
+
+	// Creating filter segment
+	sstable.FilterOffset = 0
+	if isOneFile {
+		sstable.FilterOffset = int64(file_offset)
+		sstable.FilterSize = uint64(bf.Serialize(data_file))
+		file_offset += sstable.FilterSize
+		data_file.Seek(int64(file_offset), 0)
+	} else {
+		bffile, _ := os.Create(sstable.FilterPath)
+		sstable.FilterSize = uint64(bf.Serialize(bffile))
+		bffile.Close()
+	}
+
 	sstable.CreateTOC()
 	return
 }
@@ -169,9 +209,13 @@ func (sstable *SSTable) CreateTOC() {
 	toc := &TOC{}
 	toc.DataPath = sstable.DataSegmentPath
 	toc.IndexPath = sstable.Index.indexfile
-	toc.IndexOffest = int(sstable.Index.offset)
-	toc.IndexSize = uint(sstable.Index.size)
+	toc.IndexOffest = int64(sstable.Index.offset)
+	toc.IndexSize = uint64(sstable.Index.size)
 	toc.FilterPath = sstable.FilterPath
+	toc.FilterSize = sstable.FilterSize
+	toc.FilterOffset = sstable.FilterOffset
+	toc.SummaryOffset = sstable.SummaryOffset
+	toc.SummarySize = sstable.SummarySize
 	toc.SummaryPath = sstable.SummarySegmentPath
 	toc.DataSize = sstable.DataSegmentSize
 	toc.Save(sstable.TOCFilePath)
@@ -224,7 +268,7 @@ func GetTOC(generation int) *TOC {
 		fmt.Println("No data saved")
 		return nil
 	}
-	gen := strconv.Itoa(generation)
+	gen := fmt.Sprintf("%03d", generation)
 
 	file, err := os.OpenFile("./data/SSTables/usertable-"+gen+"-TOC.yaml", os.O_RDONLY, 0666)
 	if err != nil {
@@ -325,8 +369,37 @@ func GetSSTable(toc *TOC) *SSTable {
 	t.DataSegmentSize = toc.DataSize
 	t.DataSegmentPath = toc.DataPath
 	t.FilterPath = toc.FilterPath
+	t.FilterOffset = toc.FilterOffset
+	t.FilterSize = toc.FilterSize
 	t.SummarySegmentPath = toc.SummaryPath
+	t.SummaryOffset = toc.SummaryOffset
+	t.SummarySize = toc.SummarySize
 	t.Index = NewIndex(toc.IndexPath, int64(toc.IndexOffest), uint64(toc.IndexSize))
 
 	return t
+}
+
+func (t *SSTable) QueryBloomFilter(key string) bool {
+	file, err := os.OpenFile(t.FilterPath, os.O_RDONLY, 0666)
+	if err != nil {
+		panic(err)
+	}
+	file.Seek(t.FilterOffset, 0)
+	bf := bloom.Deserialize(file)
+	return bf.Has(key)
+}
+
+func (t *SSTable) QuerySummary(key string) (int64, int64) {
+	summary_file, _ := os.Open(t.SummarySegmentPath)
+	defer summary_file.Close()
+	summary_file.Seek(t.SummaryOffset, 0)
+	first_key, last_key, bytes_read := summary.DeserializeHeader(summary_file)
+	if summary.IsBetweenKeys(first_key, last_key, key) {
+		summary_file.Seek(t.SummaryOffset+int64(bytes_read), 0)
+		s := summary.Deserialize(summary_file, int(t.SummarySize-uint64(bytes_read)))
+		first, last := s.GetOffset(key)
+
+		return int64(first), int64(last)
+	}
+	return -1, -1
 }
