@@ -69,3 +69,8 @@ func (c *Cache) PrintCache() {
 		fmt.Printf("Key: %s, Value: %s\n", node.key, string(node.value))
 	}
 }
+
+func (c *Cache) Clear() {
+	c.list = list.New()
+	c.data_map = make(map[string]*list.Element)
+}
