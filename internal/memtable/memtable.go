@@ -5,6 +5,9 @@ import (
 	conf "go-touch-grass/config"
 	"go-touch-grass/pkg/btree"
 	"go-touch-grass/pkg/skiplist"
+	"hash"
+	"hash/crc32"
+	"time"
 )
 
 type Container interface {
@@ -16,14 +19,17 @@ type Container interface {
 }
 
 type Record struct {
-	Key       string
+	Crc       uint32
+	Timestamp time.Time
 	Tombstone bool
+	Key       string
 	Data      []byte
 }
 
 type Memtable struct {
 	table Container
 	cap   int
+	h     hash.Hash32
 }
 
 func New(c *conf.Config) *Memtable {
@@ -37,7 +43,27 @@ func New(c *conf.Config) *Memtable {
 	default:
 		panic("error in config file (MemtableContainer field)")
 	}
-	return &Memtable{table, c.MemtableCap}
+	return &Memtable{table, c.MemtableCap, crc32.NewIEEE()}
+}
+
+func (mt *Memtable) getCrc(key string, data []byte) uint32 {
+	mt.h.Write([]byte(key))
+	mt.h.Write(data)
+	sum := mt.h.Sum32()
+	mt.h.Reset()
+	fmt.Println(sum)
+	return sum
+}
+
+func (mt *Memtable) putRecord(key string, data []byte, tombstone bool) {
+	record := Record{
+		Crc:       mt.getCrc(key, data),
+		Timestamp: time.Now(),
+		Tombstone: tombstone,
+		Key:       key,
+		Data:      data,
+	}
+	mt.table.Put(key, record)
 }
 
 func (mt *Memtable) Put(key string, data []byte) {
@@ -45,22 +71,19 @@ func (mt *Memtable) Put(key string, data []byte) {
 	if !contains && mt.IsFull() {
 		panic("adding new record to a full memtable")
 	}
-
-	record := Record{key, false, data}
-	mt.table.Put(key, record)
+	mt.putRecord(key, data, false)
 }
 
 func (mt *Memtable) Delete(key string) {
-	record := Record{key, true, nil}
-	mt.table.Put(key, record)
+	mt.putRecord(key, nil, true)
 }
 
-func (mt *Memtable) Get(key string) []byte {
+func (mt *Memtable) Get(key string) (Record, bool) {
 	data, found := mt.table.Get(key)
 	if !found {
-		panic("memtable does not contain provided key")
+		return Record{}, false
 	}
-	return data.(Record).Data
+	return data.(Record), true
 }
 
 func (mt *Memtable) IsFull() bool {
