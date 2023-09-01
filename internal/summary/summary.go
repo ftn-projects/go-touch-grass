@@ -12,13 +12,13 @@ type Summary struct {
 }
 
 // kreiranje novog summary
-func New(step uint64, ikeys []string, ioffsets []uint64) *Summary {
-	size := uint64(math.Ceil(float64(len(ikeys))/float64(step))) + 1
+func New(step int, ikeys []string, ioffsets []uint64) *Summary {
+	size := int(math.Ceil(float64(len(ikeys))/float64(step))) + 1
 	keys := make([]string, size)
 	offsets := make([]uint64, size)
 
 	j := 0
-	for i := uint64(0); i < uint64(len(ikeys))-1; i += step { //svaki i*step key ubacuje u keys
+	for i := 0; i < len(ikeys)-1; i += step { //svaki i*step key ubacuje u keys
 		keys[j] = ikeys[i]
 		offsets[j] = ioffsets[i]
 		j++
