@@ -64,16 +64,16 @@ func (s *Summary) Serialize(w io.Writer) int {
 	sum := 0
 	first := s.keys[0]
 	last := s.keys[len(s.keys)-1]
-	util.WriteNumber(uint32(len(first)), w)
+	util.WriteUint(uint32(len(first)), w)
 	util.WriteString(first, w)
-	util.WriteNumber(uint32(len(last)), w)
+	util.WriteUint(uint32(len(last)), w)
 	util.WriteString(last, w)
 	sum += len(first) + len(last)
 
 	for i, k := range s.keys {
-		util.WriteNumber(uint32(len(k)), w)
+		util.WriteUint(uint32(len(k)), w)
 		util.WriteString(k, w)
-		util.WriteNumber(s.offsets[i], w)
+		util.WriteUint(s.offsets[i], w)
 		sum += len(k)
 	}
 	return sum + len(s.keys)*12 + 8
