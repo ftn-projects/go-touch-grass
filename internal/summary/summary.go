@@ -12,13 +12,13 @@ type Summary struct {
 }
 
 // kreiranje novog summary
-func New(step uint64, ikeys []string, ioffsets []uint64) *Summary {
-	size := uint64(math.Ceil(float64(len(ikeys))/float64(step))) + 1
+func New(step int, ikeys []string, ioffsets []uint64) *Summary {
+	size := int(math.Ceil(float64(len(ikeys))/float64(step))) + 1
 	keys := make([]string, size)
 	offsets := make([]uint64, size)
 
 	j := 0
-	for i := uint64(0); i < uint64(len(ikeys))-1; i += step { //svaki i*step key ubacuje u keys
+	for i := 0; i < len(ikeys)-1; i += step { //svaki i*step key ubacuje u keys
 		keys[j] = ikeys[i]
 		offsets[j] = ioffsets[i]
 		j++
@@ -64,16 +64,16 @@ func (s *Summary) Serialize(w io.Writer) int {
 	sum := 0
 	first := s.keys[0]
 	last := s.keys[len(s.keys)-1]
-	util.WriteNumber(uint32(len(first)), w)
+	util.WriteUint(uint32(len(first)), w)
 	util.WriteString(first, w)
-	util.WriteNumber(uint32(len(last)), w)
+	util.WriteUint(uint32(len(last)), w)
 	util.WriteString(last, w)
 	sum += len(first) + len(last)
 
 	for i, k := range s.keys {
-		util.WriteNumber(uint32(len(k)), w)
+		util.WriteUint(uint32(len(k)), w)
 		util.WriteString(k, w)
-		util.WriteNumber(s.offsets[i], w)
+		util.WriteUint(s.offsets[i], w)
 		sum += len(k)
 	}
 	return sum + len(s.keys)*12 + 8

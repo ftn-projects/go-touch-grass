@@ -14,6 +14,8 @@ type Config struct {
 	MemtableCap       int
 	MemtableContainer string
 	SSTableAllInOne   bool
+	FilterPrecision   float64
+	SummaryStep       int
 }
 
 func (c Config) Save() {
@@ -44,6 +46,8 @@ func getDefault() *Config {
 		MemtableCap:       10,
 		MemtableContainer: "skiplist",
 		SSTableAllInOne:   false,
+		FilterPrecision:   0.01,
+		SummaryStep:       5,
 	}
 }
 

@@ -45,10 +45,10 @@ func (bf *BloomFilter) Has(key string) bool {
 }
 
 func (bf *BloomFilter) Serialize(w io.Writer) int {
-	util.WriteNumber(bf.m, w)
-	util.WriteNumber(bf.k, w)
+	util.WriteUint(bf.m, w)
+	util.WriteUint(bf.k, w)
 	for _, f := range bf.filter {
-		util.WriteNumber(f, w)
+		util.WriteUint(f, w)
 	}
 	for _, h := range bf.hashes {
 		util.WriteBytes(h.Seed, w)
