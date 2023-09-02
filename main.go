@@ -37,4 +37,8 @@ func main() {
 	// myCache.Add("key7", []byte("value7"))
 
 	// myCache.PrintCache()
+
+	// myCache.Clear()
+
+	// myCache.PrintCache()
 }

@@ -15,6 +15,7 @@ type Config struct {
 	SSTableAllInOne   bool
 	FilterPrecision   float64
 	SummaryStep       int
+	CacheSize         int
 }
 
 func (c Config) Save() {
@@ -42,6 +43,7 @@ func getDefault() *Config {
 		SSTableAllInOne:   false,
 		FilterPrecision:   0.01,
 		SummaryStep:       5,
+		CacheSize:         10,
 	}
 }
 

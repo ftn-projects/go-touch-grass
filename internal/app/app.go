@@ -2,6 +2,7 @@ package app
 
 import (
 	conf "go-touch-grass/config"
+	"go-touch-grass/internal/cache"
 	"go-touch-grass/internal/memtable"
 	"os"
 	fp "path/filepath"
@@ -12,7 +13,7 @@ type App struct {
 	datapath string
 	config   *conf.Config
 	table    *memtable.Memtable
-	// cache    *cache.Cache
+	cache    *cache.Cache
 	// wal      *wal.Wal
 }
 
@@ -22,6 +23,7 @@ func New() *App {
 		datapath: getDataPath(),
 		config:   config,
 		table:    memtable.New(config),
+		cache:    cache.NewCache(config.CacheSize),
 	}
 }
 
@@ -36,7 +38,19 @@ func (app *App) Put(key string, data []byte) {
 func (app *App) Get(key string) ([]byte, bool) {
 	// check if in memtable
 	// in cache
-	// access level 1 sstables, level 2 sstables etc
+	value, found := app.table.Get(key)
+	if found {
+		return value.Data, true
+	}
+
+	// Check if in cache
+	valueCache, foundCache := app.cache.Get(key)
+	if foundCache {
+		return valueCache, true
+	}
+
+	// Access level 1 sstables, level 2 sstables, etc.
+
 	return nil, false
 }
 
