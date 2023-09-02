@@ -1,8 +1,10 @@
 package app
 
 import (
+	"fmt"
 	conf "go-touch-grass/config"
 	"go-touch-grass/internal/cache"
+	"go-touch-grass/internal/tbucket"
 	"go-touch-grass/internal/wal"
 	"os"
 	fp "path/filepath"
@@ -14,7 +16,7 @@ type App struct {
 	config   *conf.Config
 	cache    *cache.Cache
 	wal      *wal.WAL
-	// tbucket  *tbucket.TBucket
+	tbucket  *tbucket.TBucket
 	// lsm *lsm.LSMTree
 }
 
@@ -25,17 +27,32 @@ func New() *App {
 		config:   config,
 		cache:    cache.NewCache(config.CacheSize),
 		wal:      wal.New(fp.Join(getDataPath(), "wal"), config),
-		// tbucket:  tbucket.New(),
+		tbucket:  tbucket.New(config),
 		// lsm: lsm.New()
 	}
 }
 
+func (app *App) CanMakeQuery() bool {
+	success := app.tbucket.MakeQuery()
+	if !success {
+		fmt.Println("Previse zahteva molimo sacekajte.")
+		return false
+	}
+	return true
+}
+
 func (app *App) Put(key string, data []byte) {
+	if !app.CanMakeQuery() {
+		return
+	}
 	// wal.Put()
 	// LSM.Put(asdsds)
 }
 
 func (app *App) Get(key string) ([]byte, bool) {
+	if !app.CanMakeQuery() {
+		return nil, false
+	}
 	// LSM.MemtableGet(key)
 
 	// Check if in cache
@@ -51,6 +68,9 @@ func (app *App) Get(key string) ([]byte, bool) {
 }
 
 func (app *App) Delete(key string) {
+	if !app.CanMakeQuery() {
+		return
+	}
 	// LSM.Delete(key)
 }
 

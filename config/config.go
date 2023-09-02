@@ -7,17 +7,19 @@ import (
 )
 
 type Config struct {
-	path              string
-	SkiplistMaxHeight int
-	BtreeDegree       int
-	MemtableCap       int
-	MemtableContainer string
-	SSTableAllInOne   bool
-	FilterPrecision   float64
-	SummaryStep       int
-	CacheSize         int
-	WalLowWaterMark   int
-	WalSegmentSize    int64
+	path                 string
+	SkiplistMaxHeight    int
+	BtreeDegree          int
+	MemtableCap          int
+	MemtableContainer    string
+	SSTableAllInOne      bool
+	FilterPrecision      float64
+	SummaryStep          int
+	CacheSize            int
+	WalLowWaterMark      int
+	WalSegmentSize       int64
+	TBucketResetDuration int64
+	TBucketMaxTokens     int
 }
 
 func (c Config) Save() {
@@ -38,16 +40,18 @@ func tryLoad(path string) (*Config, bool) {
 
 func getDefault() *Config {
 	return &Config{
-		SkiplistMaxHeight: 10,
-		BtreeDegree:       4,
-		MemtableCap:       10,
-		MemtableContainer: "skiplist",
-		SSTableAllInOne:   false,
-		FilterPrecision:   0.01,
-		SummaryStep:       5,
-		CacheSize:         10,
-		WalLowWaterMark:   10,
-		WalSegmentSize:    1024 * 1024,
+		SkiplistMaxHeight:    10,
+		BtreeDegree:          4,
+		MemtableCap:          10,
+		MemtableContainer:    "skiplist",
+		SSTableAllInOne:      false,
+		FilterPrecision:      0.01,
+		SummaryStep:          5,
+		CacheSize:            10,
+		WalLowWaterMark:      10,
+		WalSegmentSize:       1024 * 1024,
+		TBucketResetDuration: 2000,
+		TBucketMaxTokens:     5,
 	}
 }
 
