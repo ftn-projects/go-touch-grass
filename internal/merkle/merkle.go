@@ -38,8 +38,8 @@ func newEmptyNode() *Node {
 func newNode(hash []byte, leftc *Node, rightc *Node) *Node {
 	return &Node{data: hash, left: leftc, right: rightc}
 }
-func NewMerkleTree(data *[][]byte) *MerkleRoot {
-	leafs := getLeafs(data)
+func NewMerkleTree(leafs []*Node) *MerkleRoot {
+
 	root := &MerkleRoot{root: getMerkleRoot(leafs)}
 	return root
 }
@@ -62,17 +62,9 @@ func getMerkleRoot(nodes []*Node) *Node {
 	return getMerkleRoot(newLevel)
 }
 
-func getLeafs(data *[][]byte) []*Node {
-	leafs := make([]*Node, len(*data))
-	for i, v := range *data {
-		hash := Hash(v)
-		leaf := &Node{data: hash[:], left: nil, right: nil}
-		leafs[i] = leaf
-	}
-	return leafs
-}
-func (m *MerkleRoot) TravarseTree() {
-
+func GetLeaf(data []byte) *Node {
+	hash := Hash(data)
+	return &Node{data: hash[:], left: nil, right: nil}
 }
 
 func (m *MerkleRoot) Save(filepath string) {

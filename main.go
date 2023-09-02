@@ -10,14 +10,8 @@ import (
 func main() {
 	conf := config.New(app.GetConfigPath())
 	lsm := lsmtree.New(*conf, app.GetDataPath())
-	// lsm.Put("Dimitrije", []byte("Gasic"))
-	// lsm.Put("Masa", []byte("Ivanov"))
-	// lsm.Put("aaa", []byte("aaa"))
-	// lsm.Put("bbb", []byte("bbb"))
-	// lsm.Put("ccc", []byte("ccc"))
-	// lsm.Put("ddd", []byte("ddd"))
-	// lsm.Put("eee", []byte("eee"))
-	lsm.GetFromDisc("Dimitrije")
+	lsm.Put("Dimitrije", []byte("Gasic"))
+	lsm.Put("Masa", []byte("Ivanov"))
 	fmt.Println(lsm.GetFromDisc("Dimitrije"))
 
 	// mem := memtable.GetExample()

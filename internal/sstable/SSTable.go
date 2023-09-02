@@ -10,7 +10,9 @@ import (
 	"go-touch-grass/config"
 	"go-touch-grass/internal/bloom"
 	"go-touch-grass/internal/memtable"
+	"go-touch-grass/internal/merkle"
 	"go-touch-grass/internal/summary"
+	"go-touch-grass/internal/util"
 	"os"
 	fp "path/filepath"
 	"strconv"
@@ -32,6 +34,7 @@ type TOC struct {
 	SummaryPath   string
 	SummaryOffset int64
 	SummarySize   uint64
+	MetadataPath  string
 }
 
 type SSTable struct {
@@ -52,6 +55,7 @@ func NewSSTable(conf *config.Config, dataPath string, level string) *SSTable {
 		table.Toc.FilterPath = table.FilePathBase + gen + "-filter.db"
 		table.Toc.SummaryPath = table.FilePathBase + gen + "-summary.db"
 		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
+		table.Toc.MetadataPath = table.FilePathBase + gen + "-metadata.txt"
 		table.Index = NewIndex(table.FilePathBase+gen+"-index.db", 0, 0)
 	} else {
 		temp := table.FilePathBase + gen + "-SSTable.db"
@@ -59,6 +63,7 @@ func NewSSTable(conf *config.Config, dataPath string, level string) *SSTable {
 		table.Toc.FilterPath = temp
 		table.Index = NewIndex(temp, 0, 0)
 		table.Toc.SummaryPath = temp
+		table.Toc.MetadataPath = table.FilePathBase + gen + "-metadata.txt"
 		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
 
 	}
@@ -187,6 +192,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c config.Config)
 	}
 
 	sstable.CreateTOC()
+	sstable.CreateMerkle()
 }
 
 func (sstable *SSTable) Read(offset int64) ([]byte, bool) {
@@ -382,4 +388,32 @@ func (t *SSTable) QuerySummary(key string) (int64, int64) {
 		return int64(first), int64(last)
 	}
 	return -1, -1
+}
+func (t *SSTable) CreateMerkle() {
+	leafs := make([]*merkle.Node, 0)
+	len := 100
+	max := t.Toc.DataSize
+	file, _ := os.Open(t.Toc.DataPath)
+	i := 0
+	for {
+		if i >= int(max) {
+			break
+		} else if i+100 > int(max) {
+			len := int(max) - i
+			t, err := util.ReadBytes(len, file)
+			leafs = append(leafs, merkle.GetLeaf(t))
+			if err != nil {
+				panic(err)
+			}
+			break
+		} else {
+			t, err := util.ReadBytes(len, file)
+			leafs = append(leafs, merkle.GetLeaf(t))
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+	mt := merkle.NewMerkleTree(leafs)
+	mt.Save(t.Toc.MetadataPath)
 }
