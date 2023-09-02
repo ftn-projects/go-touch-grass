@@ -49,7 +49,7 @@ func (lsm *LSMTree) LoadTocPaths(level int) []string {
 }
 
 func (lsm *LSMTree) LevelFull(level int) bool {
-	return len(lsm.LoadTocPaths(level)) >= int(lsm.max_level)
+	return len(lsm.LoadTocPaths(level)) >= int(lsm.level_size)
 }
 
 func (lsm *LSMTree) CreateNewLevel() {
@@ -66,7 +66,7 @@ func (lsm *LSMTree) getMaxLevelNumber() int {
 	max_num_lvl := -1
 	for _, v := range lsm.levels {
 		t := strings.Split(v, "-")
-		num, _ := strconv.Atoi(t[1])
+		num, _ := strconv.Atoi(t[len(t)-1])
 		if num > max_num_lvl {
 			max_num_lvl = num
 		}
@@ -215,8 +215,8 @@ func (lsm *LSMTree) CompactLevel(level int) {
 	}
 	table.CreateTOC()
 
-	if lsm.LevelFull(level) {
-		lsm.CompactLevel(level)
+	if lsm.LevelFull(level + 1) {
+		lsm.CompactLevel(level + 1)
 	}
 }
 
