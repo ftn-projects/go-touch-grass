@@ -206,6 +206,7 @@ func (s *SkipList) Size() int {
 }
 
 func (s *SkipList) Clear() {
-	s.head = nil
+	next := make([]*node, s.maxHeight)
+	s.head = &node{"", nil, next}
 	s.size = 0
 }

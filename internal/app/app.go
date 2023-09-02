@@ -21,12 +21,12 @@ type App struct {
 }
 
 func New() *App {
-	config := conf.New(getConfigPath())
+	config := conf.New(GetConfigPath())
 	return &App{
-		datapath: getDataPath(),
+		datapath: GetDataPath(),
 		config:   config,
 		cache:    cache.New(config.CacheSize),
-		wal:      wal.New(fp.Join(getDataPath(), "wal"), config),
+		wal:      wal.New(fp.Join(GetDataPath(), "wal"), config),
 		tbucket:  tbucket.New(config),
 		// lsm: lsm.New()
 	}
@@ -79,15 +79,15 @@ func getRootPath() string {
 	return fp.Dir(fp.Dir(fp.Dir(path)))
 }
 
-func getConfigPath() string {
+func GetConfigPath() string {
 	return fp.Join(getRootPath(), "config", "config.yaml")
 }
 
-func getDataPath() string {
+func GetDataPath() string {
 	path := fp.Join(getRootPath(), "data")
 	_, err := os.Stat(path)
 	if err != nil {
-		os.Mkdir(path, 0666)
+		os.Mkdir(path, 0755)
 	}
 	return path
 }

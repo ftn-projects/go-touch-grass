@@ -1,12 +1,17 @@
 package lsmtree
 
 import (
-	"errors"
+	"bufio"
+	"encoding/binary"
 	"fmt"
 	"go-touch-grass/config"
+	"go-touch-grass/internal/bloom"
 	"go-touch-grass/internal/memtable"
 	"go-touch-grass/internal/sstable"
+	"go-touch-grass/internal/summary"
+	"io"
 	"os"
+	fp "path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,41 +23,43 @@ type LSMTree struct {
 	level_size uint
 	levels     []string
 	conf       config.Config
+	dataPath   string
 }
 
-func (lsm *LSMTree) LoadLevel(level int) []string {
-	result := make([]string, 0)
-	folder, err := os.Open(lsm.levels[level-1])
+func formatLevel(level int) string {
+	return fmt.Sprintf("%03d", level)
+}
+
+func (lsm *LSMTree) LoadTocPaths(level int) []string {
+	tocs := make([]string, 0)
+	folder, _ := os.Open(lsm.levels[level-1])
 	content, err := folder.ReadDir(0)
 	if err != nil {
-		panic(err)
+		return []string{}
 	}
 	for _, v := range content {
 		temp := strings.Split(v.Name(), "-")
 		if temp[len(temp)-1] == "TOC.yaml" {
-			result = append(result, "./data/level-"+fmt.Sprintf("%03d", level)+"/"+v.Name())
+			tocs = append(tocs, "./data/level-"+formatLevel(level)+"/"+v.Name())
 		}
 	}
 
-	sort.StringSlice.Sort(result)
-	return result
-
+	sort.StringSlice.Sort(tocs)
+	return tocs
 }
-func (lsm *LSMTree) CheckLevelMaxSize(level int) {
-	if len(lsm.LoadLevel(level)) >= int(lsm.level_size) {
-		lsm.Compaction(level)
-	}
 
+func (lsm *LSMTree) LevelFull(level int) bool {
+	return len(lsm.LoadTocPaths(level)) >= int(lsm.max_level)
 }
+
 func (lsm *LSMTree) CreateNewLevel() {
 	max_num_lvl := lsm.getMaxLevelNumber() + 1
-	newDir := "./data/level-" + fmt.Sprintf("%03d", max_num_lvl)
+	newDir := "./data/level-" + formatLevel(max_num_lvl)
 	err := os.Mkdir(newDir, 0755)
 	lsm.levels = append(lsm.levels, newDir)
 	if err != nil {
 		panic(err)
 	}
-
 }
 
 func (lsm *LSMTree) getMaxLevelNumber() int {
@@ -67,38 +74,150 @@ func (lsm *LSMTree) getMaxLevelNumber() int {
 	return max_num_lvl
 }
 
-func New(conf config.Config) *LSMTree {
+func New(conf config.Config, dataPath string) *LSMTree {
 	lsm := &LSMTree{}
 	lsm.conf = conf
+	lsm.dataPath = dataPath
 	lsm.memtable = memtable.New(&conf)
-	data_folder, err := os.Open("./data")
+	_, err := os.Open(dataPath)
 	if err != nil {
-		err = os.Mkdir("./data", 0755)
+		err = os.Mkdir(dataPath, 0755)
 		if err != nil {
-			panic(errors.New("Check path in config file"))
+			panic("Check path in config file")
 		}
 	}
-	data_folder, err = os.Open("./data")
+	data_folder, _ := os.Open(dataPath)
 
-	level, err := data_folder.ReadDir(0)
+	level, _ := data_folder.ReadDir(0)
 	lsm.levels = make([]string, 0)
 	if len(level) == 0 {
-		first_lvl := "./data/level-001"
+		first_lvl := fp.Join(dataPath, "level-001")
+		_, err := os.Stat(first_lvl)
+		if err != nil {
+			os.Mkdir(first_lvl, 0755)
+		}
 		lsm.levels = append(lsm.levels, first_lvl)
-		os.Mkdir(first_lvl, 0755)
 	} else {
 		for i := 0; i < len(level); i++ {
-			lsm.levels = append(lsm.levels, "./data/"+level[i].Name())
+			lsm.levels = append(lsm.levels, fp.Join(dataPath, level[i].Name()))
 		}
 	}
+	lsm.max_level = uint(conf.LsmMaxLevel)
+	lsm.level_size = uint(conf.LsmLevelSize)
 	sort.StringSlice.Sort(lsm.levels)
 	return lsm
 }
 
-func (lsm *LSMTree) Compaction(level int) {
-	// TO-DO kreirati funkciju za pravljenje nove SSTabele sa drugim SSTabelama, potrebno je ucitati svaki
-	// TOC i zatim svaku SSTable strukturu, nakon toga se cita sekvencijalno upisuju podaci i cuva index u memoriji
-	// nazalost ne moze unapred znati velicinu potrebnu za data segment :(
+func writeRecord(w io.Writer, rec sstable.DataElement) uint64 {
+	n := 37
+	tsBytes := make([]byte, 16)
+	binary.BigEndian.PutUint64(tsBytes[:8], uint64(rec.Timestamp.Unix()))
+	binary.BigEndian.PutUint64(tsBytes[8:], uint64(rec.Timestamp.Nanosecond()))
+	binary.Write(w, binary.BigEndian, rec.CRC)
+	binary.Write(w, binary.BigEndian, tsBytes)
+	binary.Write(w, binary.BigEndian, rec.Tombstone)
+	binary.Write(w, binary.BigEndian, rec.KeySize)
+	binary.Write(w, binary.BigEndian, rec.ValueSize)
+	k, _ := w.Write([]byte(rec.Key))
+	v, _ := w.Write(rec.Value)
+	return uint64(n + k + v)
+}
+
+func (lsm *LSMTree) CompactLevel(level int) {
+	if level+1 >= int(lsm.max_level) {
+		panic("LSM tree unable to perform compaction, max level reached")
+	}
+
+	if len(lsm.levels) == level {
+		lsm.CreateNewLevel()
+	}
+	table := sstable.NewSSTable(&lsm.conf, lsm.dataPath, "level-"+formatLevel(level+1))
+
+	toc_paths := lsm.LoadTocPaths(level)
+	iterators := make([]*ssTableIterator, len(toc_paths))
+	for i, toc_path := range lsm.LoadTocPaths(level) {
+		toc := sstable.GetTOC(toc_path)
+		iterators[i] = newIterator(toc)
+	}
+
+	record_count := uint64(lsm.conf.MemtableCap * len(iterators))
+	bf := bloom.New(record_count, lsm.conf.FilterPrecision)
+
+	data_file, _ := os.Create(table.Toc.DataPath)
+	w := bufio.NewWriter(data_file)
+
+	var keys []string
+	var offsets []uint64
+	position := uint64(0)
+	for {
+		var records []sstable.DataElement
+		for _, iterator := range iterators {
+			if !iterator.End() {
+				records = append(records, iterator.Read())
+			}
+		}
+		if len(records) == 0 {
+			break
+		}
+
+		sort.Slice(records, func(i, j int) bool {
+			return records[i].Key < records[j].Key
+		})
+		for _, rec := range records {
+			bf.Add(rec.Key)
+			keys = append(keys, rec.Key)
+			offsets = append(offsets, position)
+			position += writeRecord(w, rec)
+			w.Flush()
+			w.Reset(data_file)
+		}
+	}
+	data_file.Close()
+	table.Toc.DataSize = position
+
+	// Creating index segment
+	var ioffsets []uint64
+	if lsm.conf.SSTableAllInOne {
+		table.Index.Offset = int64(position)
+		ioffsets = table.Index.CreateIndexSegment(keys, offsets)
+		position += table.Index.Size
+		data_file.Seek(int64(position), 0)
+	} else {
+		table.Index.Offset = 0
+		ioffsets = table.Index.CreateIndexSegment(keys, offsets)
+	}
+
+	// Creating Summary
+	s := summary.New(lsm.conf.SummaryStep, keys, ioffsets)
+	table.Toc.SummaryOffset = 0
+	if lsm.conf.SSTableAllInOne {
+		table.Toc.SummaryOffset = int64(position)
+		table.Toc.SummarySize = uint64(s.Serialize(data_file))
+		position += table.Toc.SummarySize
+		data_file.Seek(int64(position), 0)
+	} else {
+		sfile, _ := os.Create(table.Toc.SummaryPath)
+		table.Toc.SummarySize = uint64(s.Serialize(sfile))
+		sfile.Close()
+	}
+
+	// Creating filter segment
+	table.Toc.FilterOffset = 0
+	if lsm.conf.SSTableAllInOne {
+		table.Toc.FilterOffset = int64(position)
+		table.Toc.FilterSize = uint64(bf.Serialize(data_file))
+		position += table.Toc.FilterSize
+		data_file.Seek(int64(position), 0)
+	} else {
+		bffile, _ := os.Create(table.Toc.FilterPath)
+		table.Toc.FilterSize = uint64(bf.Serialize(bffile))
+		bffile.Close()
+	}
+	table.CreateTOC()
+
+	if lsm.LevelFull(level) {
+		lsm.CompactLevel(level)
+	}
 }
 
 func (lsm *LSMTree) GetFromMemtable(key string) ([]byte, bool) {
@@ -115,7 +234,7 @@ func (lsm *LSMTree) GetFromMemtable(key string) ([]byte, bool) {
 
 func (lsm *LSMTree) GetFromDisc(key string) ([]byte, bool) {
 	for i := 1; i <= len(lsm.levels); i++ {
-		level := lsm.LoadLevel(i)
+		level := lsm.LoadTocPaths(i)
 		for j := len(level) - 1; j >= 0; j-- {
 			TOC := sstable.GetTOC(level[j])
 			table := sstable.GetSSTable(TOC)
@@ -150,8 +269,10 @@ func (lsm *LSMTree) Delete(key string) {
 
 func (lsm *LSMTree) FlushMemtable() {
 	// Treba proveriti svaki nivo da li je slucajno dosao do prekoracenja
-	table := sstable.NewSSTable(&lsm.conf, "level-001")
+	table := sstable.NewSSTable(&lsm.conf, lsm.dataPath, "level-001")
 	table.WriteNewSSTable(lsm.memtable.GetAll(), lsm.conf)
-	lsm.CheckLevelMaxSize(1)
 	lsm.memtable.Clear()
+	if lsm.LevelFull(1) {
+		lsm.CompactLevel(1)
+	}
 }
