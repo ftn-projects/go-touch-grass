@@ -25,7 +25,7 @@ func New() *App {
 	return &App{
 		datapath: getDataPath(),
 		config:   config,
-		cache:    cache.NewCache(config.CacheSize),
+		cache:    cache.New(config.CacheSize),
 		wal:      wal.New(fp.Join(getDataPath(), "wal"), config),
 		tbucket:  tbucket.New(config),
 		// lsm: lsm.New()

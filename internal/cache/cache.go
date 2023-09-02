@@ -16,7 +16,7 @@ type Node struct {
 	value []byte
 }
 
-func NewCache(size int) *Cache {
+func New(size int) *Cache {
 	return &Cache{
 		size:     size,
 		list:     list.New(),
