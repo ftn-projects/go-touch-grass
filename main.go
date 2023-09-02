@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"go-touch-grass/config"
 	"go-touch-grass/internal/lsmtree"
 )
@@ -13,7 +14,7 @@ func main() {
 	lsm.Put("aaa", []byte("aaa"))
 	lsm.Put("bbb", []byte("bbb"))
 	lsm.Put("ccc", []byte("ccc"))
-	lsm.GetFromDisc("Dimitrije")
+	fmt.Println(lsm.GetFromDisc("Dimitrije"))
 
 	// mem := memtable.GetExample()
 	// sstable.NewSSTable(conf).WriteNewSSTable(mem.GetAll(), conf.SSTableAllInOne)
