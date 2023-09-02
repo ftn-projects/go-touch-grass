@@ -47,11 +47,11 @@ type SSTable struct {
 	Index              *Index
 }
 
-func NewSSTable(conf *config.Config) *SSTable {
+func NewSSTable(conf *config.Config, level string) *SSTable {
 	// Creating file paths for new SSTable
 	// Modify it for LSM Tree levels
-	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
-	gen := fmt.Sprintf("%03d", GetNextGeneration())
+	table := &SSTable{FilePathBase: "./data/" + level + "/usertable-"}
+	gen := fmt.Sprintf("%03d", GetNextGeneration(level))
 	if !conf.SSTableAllInOne {
 		table.DataSegmentPath = table.FilePathBase + gen + "-data.db"
 		table.FilterPath = table.FilePathBase + gen + "-filter.db"
@@ -71,7 +71,7 @@ func NewSSTable(conf *config.Config) *SSTable {
 	return table
 }
 
-func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) {
+func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c config.Config) {
 	// Function used for making SSTable on Disk
 	// Getting data from memtable (traversing a BTree or SkipList)
 	// Saving data in data segment, creating index and serializing it
@@ -84,7 +84,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	keys := make([]string, len(data))
 	offsets := make([]uint64, len(data))
 
-	bf := bloom.New(uint64(len(data)), 0.001)
+	bf := bloom.New(uint64(len(data)), c.FilterPrecision)
 
 	data_file, err := os.Create(sstable.DataSegmentPath)
 	if err != nil {
@@ -155,7 +155,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	var key_offsets []uint64
 	// Creating index segment
 	sstable.Index.offset = 0
-	if isOneFile {
+	if c.SSTableAllInOne {
 		sstable.Index.offset = int64(file_offset)
 		key_offsets = sstable.Index.CreateIndexSegment(keys, offsets)
 		file_offset += sstable.Index.size
@@ -165,9 +165,9 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	}
 
 	// Creating Summary
-	s := summary.New(4, keys, key_offsets)
+	s := summary.New(c.SummaryStep, keys, key_offsets)
 	sstable.SummaryOffset = 0
-	if isOneFile {
+	if c.SSTableAllInOne {
 		sstable.SummaryOffset = int64(file_offset)
 		sstable.SummarySize = uint64(s.Serialize(data_file))
 		file_offset += sstable.SummarySize
@@ -180,7 +180,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 
 	// Creating filter segment
 	sstable.FilterOffset = 0
-	if isOneFile {
+	if c.SSTableAllInOne {
 		sstable.FilterOffset = int64(file_offset)
 		sstable.FilterSize = uint64(bf.Serialize(data_file))
 		file_offset += sstable.FilterSize
@@ -195,7 +195,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	return
 }
 
-func (sstable *SSTable) Read(offset int64) {
+func (sstable *SSTable) Read(offset int64) ([]byte, bool) {
 	// Function used to read segment from DataSegment
 	data_file, err := os.OpenFile(sstable.DataSegmentPath, os.O_RDONLY, 0666)
 	if err != nil {
@@ -204,7 +204,7 @@ func (sstable *SSTable) Read(offset int64) {
 	data_file.Seek(offset, 1)
 	temp := ReadNextDataRecord(data_file)
 	// Mozda je bolje vratiti value nazad funkciji koja poziva ovu funkciju
-	fmt.Println(temp.CRC, "   ", temp.Tombstone, "    ", temp.Timestamp.String(), "     ", temp.Key, "    ", string(temp.Value))
+	return temp.Value, temp.Tombstone
 }
 
 func (sstable *SSTable) CreateTOC() {
@@ -224,11 +224,11 @@ func (sstable *SSTable) CreateTOC() {
 	toc.Save(sstable.TOCFilePath)
 }
 
-func GetNextGeneration() int {
+func GetNextGeneration(level string) int {
 	// Utility function used for getting the next number for generation
 	// Return:
 	// 	- Last generation + 1
-	file, err := os.Open("./data/SSTables")
+	file, err := os.Open("./data/" + level)
 	if err != nil {
 		panic(err)
 	}
@@ -258,22 +258,14 @@ func GetNextGeneration() int {
 	return max + 1
 }
 
-func GetTOC(generation int) *TOC {
+func GetTOC(toc_path string) *TOC {
 	// Loading a TOC
 	// Parameters:
 	//	- generation : selecting a sstable to pick, if it is 0 we return the last made SSTable
 	// Return:
 	//	- Pointer to TOC
-	if generation <= 0 {
-		generation = GetNextGeneration() - 1
-	}
-	if generation < 1 {
-		fmt.Println("No data saved")
-		return nil
-	}
-	gen := fmt.Sprintf("%03d", generation)
 
-	file, err := os.OpenFile("./data/SSTables/usertable-"+gen+"-TOC.yaml", os.O_RDONLY, 0666)
+	file, err := os.OpenFile(toc_path, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}

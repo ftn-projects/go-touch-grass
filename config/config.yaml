@@ -1,7 +1,10 @@
 skiplistmaxheight: 10
 btreedegree: 4
-memtablecap: 10
+memtablecap: 4
 memtablecontainer: skiplist
 sstableallinone: false
 filterprecision: 0.01
 summarystep: 5
+cachesize: 0
+wallowwatermark: 0
+walsegmentsize: 0
