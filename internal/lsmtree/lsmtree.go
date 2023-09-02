@@ -214,7 +214,7 @@ func (lsm *LSMTree) CompactLevel(level int) {
 		bffile.Close()
 	}
 	table.CreateTOC()
-
+	DeleteDirContent(lsm.levels[level-1])
 	if lsm.LevelFull(level + 1) {
 		lsm.CompactLevel(level + 1)
 	}
@@ -275,4 +275,14 @@ func (lsm *LSMTree) FlushMemtable() {
 	if lsm.LevelFull(1) {
 		lsm.CompactLevel(1)
 	}
+}
+
+func DeleteDirContent(path string) {
+	d, _ := os.Open(path)
+	files, _ := d.ReadDir(0)
+	for _, v := range files {
+		file_path := fp.Join(path, v.Name())
+		os.Remove(file_path)
+	}
+
 }
