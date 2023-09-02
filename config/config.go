@@ -16,6 +16,8 @@ type Config struct {
 	FilterPrecision   float64
 	SummaryStep       int
 	CacheSize         int
+	WalLowWaterMark   int
+	WalSegmentSize    int64
 }
 
 func (c Config) Save() {
@@ -44,6 +46,8 @@ func getDefault() *Config {
 		FilterPrecision:   0.01,
 		SummaryStep:       5,
 		CacheSize:         10,
+		WalLowWaterMark:   10,
+		WalSegmentSize:    1024 * 1024,
 	}
 }
 

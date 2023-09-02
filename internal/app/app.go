@@ -3,7 +3,7 @@ package app
 import (
 	conf "go-touch-grass/config"
 	"go-touch-grass/internal/cache"
-	"go-touch-grass/internal/memtable"
+	"go-touch-grass/internal/wal"
 	"os"
 	fp "path/filepath"
 	"runtime"
@@ -12,9 +12,10 @@ import (
 type App struct {
 	datapath string
 	config   *conf.Config
-	table    *memtable.Memtable
 	cache    *cache.Cache
-	// wal      *wal.Wal
+	wal      *wal.WAL
+	// tbucket  *tbucket.TBucket
+	// lsm *lsm.LSMTree
 }
 
 func New() *App {
@@ -22,26 +23,20 @@ func New() *App {
 	return &App{
 		datapath: getDataPath(),
 		config:   config,
-		table:    memtable.New(config),
 		cache:    cache.NewCache(config.CacheSize),
+		wal:      wal.New(fp.Join(getDataPath(), "wal"), config),
+		// tbucket:  tbucket.New(),
+		// lsm: lsm.New()
 	}
 }
 
 func (app *App) Put(key string, data []byte) {
-	app.table.Put(key, data)
 	// wal.Put()
-	// check if table full -> flush to sstable
-	//                        table.Clear()
-	//                        cache.Clear()
+	// LSM.Put(asdsds)
 }
 
 func (app *App) Get(key string) ([]byte, bool) {
-	// check if in memtable
-	// in cache
-	value, found := app.table.Get(key)
-	if found {
-		return value.Data, true
-	}
+	// LSM.MemtableGet(key)
 
 	// Check if in cache
 	valueCache, foundCache := app.cache.Get(key)
@@ -49,22 +44,14 @@ func (app *App) Get(key string) ([]byte, bool) {
 		return valueCache, true
 	}
 
-	// Access level 1 sstables, level 2 sstables, etc.
+	// LSM.SstableGet(key)
+	// cache.Put(key, data)
 
 	return nil, false
 }
 
 func (app *App) Delete(key string) {
-	// app.table.Delete(key) ?
-}
-
-// kasnije kad smislimo da li ide drvo po sstabeli ili po nivou
-func (app *App) FormMerkleTrees() {
-
-}
-
-func (app *App) InitiateCompaction(level int) {
-	// if level full -> compact level to higher (Milicin deo)
+	// LSM.Delete(key)
 }
 
 func getRootPath() string {

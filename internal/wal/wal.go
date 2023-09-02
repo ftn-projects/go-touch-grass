@@ -1,9 +1,10 @@
-package main
+package wal
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"go-touch-grass/config"
 	"hash/crc32"
 	"io"
 	"os"
@@ -44,12 +45,6 @@ func CRC32(data []byte) uint32 {
 	return crc32.ChecksumIEEE(data)
 }
 
-const (
-	LogDirectory   = "wal"
-	MaxSegmentSize = 1024 * 1024 // 1 MB
-	LowWaterMark   = 10
-)
-
 func findHighestIndex(files []string) int {
 	highestIndex := -1 // Initialize to -1 so that any positive index is considered
 	for _, file := range files {
@@ -68,38 +63,30 @@ func findHighestIndex(files []string) int {
 }
 
 type WAL struct {
-	dir   string
-	index int
-	lwm   int
-	file  *os.File
+	dir      string
+	index    int
+	lwm      int
+	sgmtsize int64
+	file     *os.File
 }
 
-func NewWAL() (*WAL, error) {
-	err := os.MkdirAll(LogDirectory, 0777)
-	if err != nil {
-		return nil, err
-	}
+func New(logPath string, config *config.Config) *WAL {
+	os.MkdirAll(logPath, 0777)
 
-	files, err := filepath.Glob(filepath.Join(LogDirectory, "wal_"))
-	if err != nil {
-		return nil, err
-	}
-
+	files, _ := filepath.Glob(filepath.Join(logPath, "wal_"))
 	highestIndex := findHighestIndex(files)
 
 	// Create a new WAL with the next index
-	filename := filepath.Join(LogDirectory, fmt.Sprintf("wal_%d", highestIndex))
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0777)
-	if err != nil {
-		return nil, err
-	}
+	filename := filepath.Join(logPath, fmt.Sprintf("wal_%d", highestIndex))
+	file, _ := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0777)
 
 	return &WAL{
-		dir:   LogDirectory,
-		index: highestIndex,
-		lwm:   LowWaterMark,
-		file:  file,
-	}, nil
+		dir:      logPath,
+		index:    highestIndex,
+		lwm:      config.WalLowWaterMark,
+		sgmtsize: config.WalSegmentSize,
+		file:     file,
+	}
 }
 
 func (w *WAL) WriteRecord(record Record) error {
@@ -157,7 +144,7 @@ func (w *WAL) WriteRecord(record Record) error {
 	if err != nil {
 		return err
 	}
-	if fileInfo.Size() >= MaxSegmentSize {
+	if fileInfo.Size() >= w.sgmtsize {
 		err := w.file.Close()
 		if err != nil {
 			return err
@@ -269,7 +256,7 @@ func (w *WAL) ReadWAL() error {
 	return nil
 }
 
-func (w *WAL) cleanUpWal() bool {
+func (w *WAL) CleanUpWal() bool {
 	files, err := filepath.Glob(filepath.Join(w.dir, "wal_"))
 	if err != nil {
 		fmt.Println(err)
@@ -309,31 +296,28 @@ func (w *WAL) cleanUpWal() bool {
 	return true
 }
 
-func main() {
-	mojWal, err := NewWAL()
-	if err != nil {
-		fmt.Println(err)
-	}
+// func main() {
+// 	mojWal := New()
 
-	var records []Record
+// 	var records []Record
 
-	records = append(records, *NewRecord(time.Now(), false, []byte("milica"), []byte("123")))
-	records = append(records, *NewRecord(time.Now(), false, []byte("poop"), []byte("shitttt")))
-	records = append(records, *NewRecord(time.Now(), true, []byte("milica"), []byte("123")))
-	records = append(records, *NewRecord(time.Now(), false, []byte("milica"), []byte("betterpass!")))
+// 	records = append(records, *NewRecord(time.Now(), false, []byte("milica"), []byte("123")))
+// 	records = append(records, *NewRecord(time.Now(), false, []byte("poop"), []byte("shitttt")))
+// 	records = append(records, *NewRecord(time.Now(), true, []byte("milica"), []byte("123")))
+// 	records = append(records, *NewRecord(time.Now(), false, []byte("milica"), []byte("betterpass!")))
 
-	for _, record := range records {
-		err = mojWal.WriteRecord(record)
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
+// 	for _, record := range records {
+// 		err := mojWal.WriteRecord(record)
+// 		if err != nil {
+// 			fmt.Println(err)
+// 		}
+// 	}
 
-	err = mojWal.ReadWAL()
-	if err != nil {
-		fmt.Println(err)
-	}
+// 	err := mojWal.ReadWAL()
+// 	if err != nil {
+// 		fmt.Println(err)
+// 	}
 
-	cleaned := mojWal.cleanUpWal()
-	fmt.Println(cleaned)
-}
+// 	cleaned := mojWal.cleanUpWal()
+// 	fmt.Println(cleaned)
+// }
