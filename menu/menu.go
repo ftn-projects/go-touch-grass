@@ -16,14 +16,15 @@ func New() *Menu {
 }
 
 func (m *Menu) PrintMenu() {
-	fmt.Println("--------- MENI ---------")
+	fmt.Println("----------- MENI -----------")
 	fmt.Println("1 Upisi podatak")
 	fmt.Println("2 Pronadji podatak")
 	fmt.Println("3 Obrisi podatak")
 	fmt.Println("4 Pokreni kompakciju")
 	fmt.Println("5 Pokreni ciscenje WAL")
+	fmt.Println()
 	fmt.Println("q Izadji")
-	fmt.Println("------------------------")
+	fmt.Println("----------------------------")
 }
 
 func (m *Menu) Show() {
@@ -55,6 +56,7 @@ func (m *Menu) Show() {
 		default:
 			util.Print("Niste uneli validnu opciju.")
 		}
+		fmt.Println()
 		fmt.Println()
 	}
 }

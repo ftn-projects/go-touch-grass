@@ -7,6 +7,7 @@ import (
 	"go-touch-grass/internal/lsmtree"
 	"go-touch-grass/internal/tbucket"
 	"go-touch-grass/internal/wal"
+	"math"
 	"os"
 	fp "path/filepath"
 	"strconv"
@@ -38,6 +39,13 @@ func New() (*App, error) {
 	}
 	app.StartRecovery()
 	return app, nil
+}
+
+func (app *App) UnlockTokenBucket() {
+	app.tbucket = tbucket.New(&conf.Config{
+		TBucketResetDuration: math.MaxInt64,
+		TBucketMaxTokens:     math.MaxInt,
+	})
 }
 
 func (app *App) CanMakeQuery() error {
@@ -76,6 +84,7 @@ func (app *App) Put(key string, data []byte) (err error) {
 			Timestamp: time.Now(),
 			FlushFlag: true,
 		})
+		app.cache.Clear()
 	}
 	return
 }
@@ -119,6 +128,7 @@ func (app *App) Delete(key string) (err error) {
 			Timestamp: time.Now(),
 			FlushFlag: true,
 		})
+		app.cache.Clear()
 	}
 	return
 }

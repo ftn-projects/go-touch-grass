@@ -13,8 +13,9 @@ func LoadTestData() {
 		fmt.Println(err.Error())
 		return
 	}
-
 	keys, values := getData()
+
+	app.UnlockTokenBucket()
 	for i := 0; i < len(keys); i++ {
 		app.Put(keys[i], values[i])
 	}
@@ -26,8 +27,11 @@ func getData() (keys []string, values [][]byte) {
 
 	for _, l := range strings.Split(data, "\n") {
 		l := strings.TrimSpace(l)
-		tokens := strings.Split(l, ",")
+		if l == "" {
+			continue
+		}
 
+		tokens := strings.Split(l, ",")
 		keys = append(keys, tokens[0])
 		values = append(values, []byte(tokens[1]))
 	}

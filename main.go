@@ -5,5 +5,6 @@ import (
 )
 
 func main() {
+	// menu.LoadTestData()
 	menu.New().Show()
 }
