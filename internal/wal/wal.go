@@ -274,7 +274,7 @@ func (w *WAL) ReadWAL() ([]Record, error) {
 }
 
 func (w *WAL) CleanUpWal() {
-	files, err := fp.Glob(fp.Join(w.dir, "wal_"))
+	files, err := fp.Glob(fp.Join(w.dir, "wal_*"))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -286,11 +286,12 @@ func (w *WAL) CleanUpWal() {
 		return
 	}
 
+	// slices.Reverse(files)
 	// Remove files with index lower than the low watermark
 	for _, file := range files {
 		var index int
 		_, err := fmt.Sscanf(fp.Base(file), "wal_%03d", &index)
-		if err == nil && index < w.lwm {
+		if err == nil && index <= w.lwm {
 			err := os.Remove(file)
 			if err != nil {
 				fmt.Println(err)
@@ -298,6 +299,8 @@ func (w *WAL) CleanUpWal() {
 			}
 		}
 	}
+
+	files, _ = fp.Glob(fp.Join(w.dir, "wal_*"))
 
 	// Update indexes to start with 0 again
 	for i, file := range files {

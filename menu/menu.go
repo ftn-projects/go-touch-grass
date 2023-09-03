@@ -131,7 +131,7 @@ func (m *Menu) HandleCompaction(sc *bufio.Scanner, app *app.App) {
 }
 
 func (m *Menu) HandleWalCleanup(sc *bufio.Scanner, app *app.App) {
-	fmt.Print("Sredi WAL (Y/n): ")
+	fmt.Print("Potvrdi ciscenje (Y/n): ")
 	c := util.ScanLowerString(sc)
 
 	if c == "n" {
