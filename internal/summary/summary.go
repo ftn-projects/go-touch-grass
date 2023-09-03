@@ -18,7 +18,7 @@ func New(step int, ikeys []string, ioffsets []uint64) *Summary {
 	offsets := make([]uint64, size)
 
 	j := 0
-	for i := 0; i < len(ikeys)-1; i += step { //svaki i*step key ubacuje u keys
+	for i := 0; i < len(ikeys); i += step { //svaki i*step key ubacuje u keys
 		keys[j] = ikeys[i]
 		offsets[j] = ioffsets[i]
 		j++
