@@ -1,11 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"go-touch-grass/internal/memtable"
+	"go-touch-grass/menu"
 )
 
 func main() {
-	mt := memtable.Memtable{}
-	fmt.Println(mt)
+	// menu.LoadTestData()
+	menu.New().Show()
 }
