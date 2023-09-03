@@ -153,7 +153,8 @@ func ReadNextIndexRecord(file *os.File) (*IndexElement, int64) {
 	el.Offset = int64(binary.BigEndian.Uint64(temp))
 	return el, int64(i)
 }
-func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound int64) *IndexElement {
+
+func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound int64) (element *IndexElement, err error) {
 	// Function used for scaning a part of index structure
 	// Is used in combination with Summary structure
 	// Parameters :
@@ -162,31 +163,29 @@ func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound 
 	//	- upper_bound : offset where search would end if key was not found
 	// Return Value : Index element which contains: Key, KeySize and Offset of that Record in Data Segment
 	file, err := os.OpenFile(index.Indexfile, os.O_RDONLY, 0666)
-
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	if lower_bound < index.Offset || lower_bound > int64(index.Size+uint64(index.Offset)) {
-		panic(errors.New("Out of range"))
+		return nil, errors.New("kljuc se ne nalazi u indeksu")
 	}
 
 	if upper_bound > int64(index.Size+uint64(index.Offset)) || upper_bound < index.Offset {
-		panic(errors.New("Out of range"))
+		return nil, errors.New("kljuc se ne nalazi u indeksu")
 	}
 	if lower_bound > upper_bound {
-		panic(errors.New("Lower bound larger than upper bound"))
+		return nil, errors.New("greska prilikom citanja indeksa")
 	}
 
 	i, _ := file.Seek(lower_bound, 0)
 	for i <= upper_bound {
 		el, bytesRead := ReadNextIndexRecord(file)
 		if el.Key == key {
-			return el
+			return el, nil
 		}
 		i += bytesRead
 		file.Seek(i, 0)
 	}
-
-	return nil
+	return nil, nil
 }

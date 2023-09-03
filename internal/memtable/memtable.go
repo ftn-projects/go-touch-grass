@@ -1,6 +1,7 @@
 package memtable
 
 import (
+	"errors"
 	"fmt"
 	conf "go-touch-grass/config"
 	"go-touch-grass/internal/hash"
@@ -44,7 +45,11 @@ func New(c *conf.Config) *Memtable {
 	return &Memtable{table, c.MemtableCap}
 }
 
-func (mt *Memtable) putRecord(key string, data []byte, tombstone bool) {
+func (mt *Memtable) putRecord(key string, data []byte, tombstone bool) error {
+	_, contains := mt.table.Get(key)
+	if !contains && mt.IsFull() {
+		return errors.New("pokusaj dodavanja u punu memoriju")
+	}
 	record := Record{
 		Crc:       hash.GetCrc(key, data),
 		Timestamp: time.Now(),
@@ -53,18 +58,15 @@ func (mt *Memtable) putRecord(key string, data []byte, tombstone bool) {
 		Data:      data,
 	}
 	mt.table.Put(key, record)
+	return nil
 }
 
-func (mt *Memtable) Put(key string, data []byte) {
-	_, contains := mt.table.Get(key)
-	if !contains && mt.IsFull() {
-		panic("adding new record to a full memtable")
-	}
-	mt.putRecord(key, data, false)
+func (mt *Memtable) Put(key string, data []byte) error {
+	return mt.putRecord(key, data, false)
 }
 
-func (mt *Memtable) Delete(key string) {
-	mt.putRecord(key, nil, true)
+func (mt *Memtable) Delete(key string) error {
+	return mt.putRecord(key, nil, true)
 }
 
 func (mt *Memtable) Get(key string) (Record, bool) {

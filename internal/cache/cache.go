@@ -43,13 +43,12 @@ func (c *Cache) Add(key string, value []byte) {
 	}
 }
 
-func (c *Cache) Get(key string) ([]byte, bool) {
+func (c *Cache) Get(key string) []byte {
 	if element, exists := c.data_map[key]; exists { //bool je da li element postoji, drugo je sam element
 		c.list.MoveToFront(element)
-		return element.Value.(*Node).value, true
+		return element.Value.(*Node).value
 	}
-
-	return nil, false
+	return nil
 }
 
 func (c *Cache) Remove(key string) bool { //vraca true ako je bio u listi, false ako nije

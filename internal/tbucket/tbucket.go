@@ -1,6 +1,7 @@
 package tbucket
 
 import (
+	"errors"
 	conf "go-touch-grass/config"
 	"time"
 )
@@ -22,16 +23,16 @@ func New(config *conf.Config) *TBucket {
 	}
 }
 
-func (tb *TBucket) MakeQuery() bool {
+func (tb *TBucket) MakeQuery() error {
 	now := time.Now().UnixMilli()
 	if now-tb.ts > tb.resetDuration {
 		tb.ts = now
 		tb.tokens = tb.maxTokens - 1
-		return true
+		return nil
 	}
 	if tb.tokens != 0 {
 		tb.tokens -= 1
-		return true
+		return nil
 	}
-	return false
+	return errors.New("previse zahteva molimo sacekajte")
 }

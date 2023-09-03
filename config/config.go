@@ -22,7 +22,7 @@ type Config struct {
 	TBucketMaxTokens     int
 	LsmMaxLevel          int
 	LsmLevelSize         int
-	MerkleChunkSize      int64
+	MerkleChunkSize      int
 }
 
 func (c Config) Save() {

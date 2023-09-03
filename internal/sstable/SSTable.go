@@ -7,7 +7,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"go-touch-grass/config"
+	conf "go-touch-grass/config"
 	"go-touch-grass/internal/bloom"
 	"go-touch-grass/internal/memtable"
 	"go-touch-grass/internal/merkle"
@@ -44,11 +44,16 @@ type SSTable struct {
 	Index        *Index
 }
 
-func NewSSTable(conf *config.Config, dataPath string, level string) *SSTable {
+func NewSSTable(conf *conf.Config, dataPath string, level string) (*SSTable, error) {
 	// Creating file paths for new SSTable
 	// Modify it for LSM Tree levels
 	table := &SSTable{FilePathBase: fp.Join(dataPath, level, "usertable-")}
-	gen := fmt.Sprintf("%03d", GetNextGeneration(dataPath, level))
+	gen_index, err := GetNextGeneration(dataPath, level)
+	if err != nil {
+		return nil, err
+	}
+
+	gen := fmt.Sprintf("%03d", gen_index)
 	table.Toc = &TOC{}
 	if !conf.SSTableAllInOne {
 		table.Toc.DataPath = table.FilePathBase + gen + "-data.db"
@@ -67,11 +72,10 @@ func NewSSTable(conf *config.Config, dataPath string, level string) *SSTable {
 		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
 
 	}
-
-	return table
+	return table, nil
 }
 
-func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c config.Config) {
+func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c *conf.Config) (err error) {
 	// Function used for making SSTable on Disk
 	// Getting data from memtable (traversing a BTree or SkipList)
 	// Saving data in data segment, creating index and serializing it
@@ -88,7 +92,7 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c config.Config)
 
 	data_file, err := os.Create(sstable.Toc.DataPath)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	defer data_file.Close()
@@ -115,37 +119,37 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c config.Config)
 		offsets[i] = file_offset
 
 		if err = binary.Write(writer, binary.BigEndian, v.Crc); err != nil {
-			panic(err)
+			return
 		}
 		if err = binary.Write(writer, binary.BigEndian, timestampBytes); err != nil {
-			panic(err)
+			return
 		}
 
 		if err = binary.Write(writer, binary.BigEndian, tombstone); err != nil {
-			panic(err)
+			return
 		}
 
 		if err = binary.Write(writer, binary.BigEndian, keySize); err != nil {
-			panic(err)
+			return
 		}
 
 		if err = binary.Write(writer, binary.BigEndian, valueSize); err != nil {
-			panic(err)
+			return
 		}
 
 		if WrittenBytes, err = writer.Write(key); err != nil {
-			panic(err)
+			return
 		}
 
 		file_offset += uint64(WrittenBytes)
 
 		if WrittenBytes, err = writer.Write(value); err != nil {
-			panic(err)
+			return
 		}
 
 		file_offset += uint64(WrittenBytes) + 37 // Broj zapisanih i 2 puta po 8 bajta za zapis velicine segmenata + Tombstone
 		if err = writer.Flush(); err != nil {
-			panic(err)
+			return
 		}
 		writer.Reset(data_file)
 
@@ -192,7 +196,8 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c config.Config)
 	}
 
 	sstable.CreateTOC()
-	sstable.CreateMerkle()
+	sstable.CreateMerkle(c.MerkleChunkSize)
+	return nil
 }
 
 func (sstable *SSTable) Read(offset int64) ([]byte, bool) {
@@ -215,38 +220,39 @@ func (sstable *SSTable) CreateTOC() {
 	sstable.Toc.Save(sstable.TOCFilePath)
 }
 
-func GetNextGeneration(dataPath string, level string) int {
+func GetNextGeneration(dataPath string, level string) (gen int, err error) {
 	// Utility function used for getting the next number for generation
 	// Return:
 	// 	- Last generation + 1
 	file, err := os.Open(fp.Join(dataPath, level))
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	fileinfo, err := file.ReadDir(0)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	if len(fileinfo) == 0 {
-		return 1
+		return 1, nil
 	}
 
+	var t int
 	max := 1
 	for _, v := range fileinfo {
 		filename := strings.Split(v.Name(), "-")
 		if filename[len(filename)-1] == "TOC.yaml" {
-			t, err := strconv.Atoi(filename[len(filename)-2])
+			t, err = strconv.Atoi(filename[len(filename)-2])
 			if err != nil {
-				panic(err)
+				return
 			}
 			if t > max {
 				max = t
 			}
 		}
 	}
-	return max + 1
+	return max + 1, nil
 }
 
 func GetTOC(toc_path string) *TOC {
@@ -262,18 +268,7 @@ func GetTOC(toc_path string) *TOC {
 	}
 
 	defer file.Close()
-
-	scaner := bufio.NewScanner(file)
-	files := make([]string, 0)
-	for {
-		scaner.Scan()
-		if scaner.Text() == "" {
-			break
-		}
-		files = append(files, scaner.Text())
-	}
 	toc, _ := tryLoad(file.Name())
-
 	return toc
 }
 
@@ -397,9 +392,9 @@ func (t *SSTable) QuerySummary(key string) (int64, int64) {
 	}
 	return -1, -1
 }
-func (t *SSTable) CreateMerkle() {
+
+func (t *SSTable) CreateMerkle(chunkSize int) {
 	leafs := make([]*merkle.Node, 0)
-	shunk_size := 100
 	max := t.Toc.DataSize
 	file, _ := os.Open(t.Toc.DataPath)
 	i := 0
@@ -415,12 +410,12 @@ func (t *SSTable) CreateMerkle() {
 			}
 			break
 		} else {
-			t, err := util.ReadBytes(shunk_size, file)
+			t, err := util.ReadBytes(chunkSize, file)
 			if err != nil {
 				panic(err)
 			}
 			leafs = append(leafs, merkle.GetLeaf(t))
-			i += shunk_size
+			i += chunkSize
 		}
 	}
 	mt := merkle.NewMerkleTree(leafs)

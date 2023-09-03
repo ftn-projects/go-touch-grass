@@ -22,7 +22,7 @@ type LSMTree struct {
 	max_level  uint
 	level_size uint
 	levels     []string
-	conf       config.Config
+	conf       *config.Config
 	dataPath   string
 }
 
@@ -78,11 +78,11 @@ func (lsm *LSMTree) getMaxLevelNumber() int {
 	return max_num_lvl
 }
 
-func New(conf config.Config, dataPath string) *LSMTree {
+func New(conf *config.Config, dataPath string) *LSMTree {
 	lsm := &LSMTree{}
 	lsm.conf = conf
 	lsm.dataPath = dataPath
-	lsm.memtable = memtable.New(&conf)
+	lsm.memtable = memtable.New(conf)
 	_, err := os.Open(dataPath)
 	if err != nil {
 		err = os.Mkdir(dataPath, 0755)
@@ -150,15 +150,18 @@ func getMinRecord(records []*sstable.DataElement) (int, []int) {
 	return min, toRefresh
 }
 
-func (lsm *LSMTree) CompactLevel(level int) {
+func (lsm *LSMTree) CompactLevel(level int) error {
 	if level >= int(lsm.max_level) {
-		return
+		return nil
 	}
 
 	if len(lsm.levels) == level {
 		lsm.CreateNewLevel()
 	}
-	table := sstable.NewSSTable(&lsm.conf, lsm.dataPath, "level-"+formatLevel(level+1))
+	table, err := sstable.NewSSTable(lsm.conf, lsm.dataPath, "level-"+formatLevel(level+1))
+	if err != nil {
+		return err
+	}
 
 	toc_paths := lsm.LoadTocPaths(level)
 	iterators := make([]*ssTableIterator, len(toc_paths))
@@ -188,14 +191,12 @@ func (lsm *LSMTree) CompactLevel(level int) {
 		}
 
 		rec := records[min]
-		// if !rec.Tombstone {
 		bf.Add(rec.Key)
 		keys = append(keys, rec.Key)
 		offsets = append(offsets, position)
 		position += writeRecord(w, rec)
 		w.Flush()
 		w.Reset(data_file)
-		// }
 
 		for _, i := range toRead {
 			records[i] = iterators[i].Read()
@@ -243,15 +244,16 @@ func (lsm *LSMTree) CompactLevel(level int) {
 		bffile.Close()
 	}
 	table.CreateTOC()
-	table.CreateMerkle()
+	table.CreateMerkle(lsm.conf.MerkleChunkSize)
 	DeleteDirContent(lsm.levels[level-1])
 
 	if lsm.LevelFull(level + 1) {
-		lsm.CompactLevel(level + 1)
+		err = lsm.CompactLevel(level + 1)
 	}
+	return err
 }
 
-func (lsm *LSMTree) GetFromMemtable(key string) ([]byte, bool) {
+func (lsm *LSMTree) GetFromMemtable(key string) (data []byte, deleted bool) {
 	// Povratna vrdnost podaci i da li je obrisan
 	record, found := lsm.memtable.Get(key)
 	if found {
@@ -263,7 +265,7 @@ func (lsm *LSMTree) GetFromMemtable(key string) ([]byte, bool) {
 	return nil, false
 }
 
-func (lsm *LSMTree) GetFromDisc(key string) (data []byte, tombstone bool) {
+func (lsm *LSMTree) GetFromDisc(key string) ([]byte, error) {
 	for i := 1; i <= len(lsm.levels); i++ {
 		level := lsm.LoadTocPaths(i)
 		for j := len(level) - 1; j >= 0; j-- {
@@ -272,40 +274,68 @@ func (lsm *LSMTree) GetFromDisc(key string) (data []byte, tombstone bool) {
 			if table.QueryBloomFilter(key) {
 				start, end := table.QuerySummary(key)
 				if start >= 0 && end >= 0 {
-					keyelm := table.Index.FindBetweenRange(key, start, end)
-					if keyelm != nil {
-						return table.Read(keyelm.Offset)
+					keyelm, err := table.Index.FindBetweenRange(key, start, end)
+					if err != nil {
+						return nil, err
+					}
 
+					if keyelm != nil {
+						data, deleted := table.Read(keyelm.Offset)
+						if deleted {
+							return nil, nil
+						}
+						return data, nil
 					}
 				}
 			}
 		}
 	}
-	return nil, false
+	return nil, nil
 }
 
-func (lsm *LSMTree) Put(key string, data []byte) {
+func (lsm *LSMTree) Put(key string, data []byte) (err error, flushed bool) {
 	// Funkcija za stavljanje u memtable
-	lsm.memtable.Put(key, data)
-	if lsm.memtable.IsFull() {
-		lsm.FlushMemtable()
+	err = lsm.memtable.Put(key, data)
+	if err != nil {
+		return
 	}
-}
-func (lsm *LSMTree) Delete(key string) {
-	lsm.memtable.Delete(key)
 	if lsm.memtable.IsFull() {
-		lsm.FlushMemtable()
+		err = lsm.FlushMemtable()
+		flushed = true
 	}
+	return
 }
 
-func (lsm *LSMTree) FlushMemtable() {
+func (lsm *LSMTree) Delete(key string) (err error, flushed bool) {
+	err = lsm.memtable.Delete(key)
+	if err != nil {
+		return
+	}
+
+	if lsm.memtable.IsFull() {
+		err = lsm.FlushMemtable()
+		flushed = true
+	}
+	return
+}
+
+func (lsm *LSMTree) FlushMemtable() error {
 	// Treba proveriti svaki nivo da li je slucajno dosao do prekoracenja
-	table := sstable.NewSSTable(&lsm.conf, lsm.dataPath, "level-001")
-	table.WriteNewSSTable(lsm.memtable.GetAll(), lsm.conf)
+	table, err := sstable.NewSSTable(lsm.conf, lsm.dataPath, "level-001")
+	if err != nil {
+		return err
+	}
+
+	err = table.WriteNewSSTable(lsm.memtable.GetAll(), lsm.conf)
+	if err != nil {
+		return err
+	}
+
 	lsm.memtable.Clear()
 	if lsm.LevelFull(1) {
-		lsm.CompactLevel(1)
+		err = lsm.CompactLevel(1)
 	}
+	return err
 }
 
 func DeleteDirContent(path string) {

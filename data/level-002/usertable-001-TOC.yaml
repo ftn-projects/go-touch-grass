@@ -1,0 +1,12 @@
+datapath: data/level-002/usertable-001-data.db
+datasize: 116
+filterpath: data/level-002/usertable-001-filter.db
+filteroffset: 0
+filtersize: 308
+indexpath: data/level-002/usertable-001-index.db
+indexoffest: 0
+indexsize: 51
+summarypath: data/level-002/usertable-001-summary.db
+summaryoffset: 0
+summarysize: 36
+metadatapath: data/level-002/usertable-001-metadata.txt

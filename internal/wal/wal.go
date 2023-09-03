@@ -162,10 +162,10 @@ func (w *WAL) WriteRecord(record Record) error {
 }
 
 // pitaj ih jel bi radije da vraca listu recordsa
-func (w *WAL) ReadWAL() error {
+func (w *WAL) ReadWAL() ([]Record, error) {
 	files, err := filepath.Glob(filepath.Join(w.dir, "wal_*"))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	sort.Slice(files, func(i, j int) bool {
@@ -180,7 +180,7 @@ func (w *WAL) ReadWAL() error {
 	for _, file := range files {
 		file, err := os.Open(file)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for {
@@ -190,14 +190,14 @@ func (w *WAL) ReadWAL() error {
 				break
 			} else if err != nil {
 				fmt.Println("Greška prilikom čitanja crc:", err)
-				return err
+				return nil, err
 			}
 
 			var timestampUnix int64
 			err = binary.Read(file, binary.BigEndian, &timestampUnix)
 			if err != nil {
 				fmt.Println("Greška prilikom čitanja vremenske oznake:", err)
-				return err
+				return nil, err
 			}
 			timestamp := time.Unix(timestampUnix, 0)
 
@@ -205,7 +205,7 @@ func (w *WAL) ReadWAL() error {
 			err = binary.Read(file, binary.BigEndian, &tombstoneByte)
 			if err != nil {
 				fmt.Println("Greška prilikom čitanja Tombstone:", err)
-				return err
+				return nil, err
 			}
 			tombstone := tombstoneByte == 1
 
@@ -213,28 +213,28 @@ func (w *WAL) ReadWAL() error {
 			err = binary.Read(file, binary.BigEndian, &keySize)
 			if err != nil {
 				fmt.Println("Greška prilikom čitanja veličine ključa:", err)
-				return err
+				return nil, err
 			}
 
 			var valueSize int64
 			err = binary.Read(file, binary.BigEndian, &valueSize)
 			if err != nil {
 				fmt.Println("Greška prilikom čitanja veličine vrednosti:", err)
-				return err
+				return nil, err
 			}
 
 			key := make([]byte, keySize)
 			_, err = file.Read(key)
 			if err != nil {
 				fmt.Println("Greška prilikom čitanja ključa:", err)
-				return err
+				return nil, err
 			}
 
 			value := make([]byte, valueSize)
 			_, err = file.Read(value)
 			if err != nil {
 				fmt.Println("Greška prilikom čitanja vrednosti:", err)
-				return err
+				return nil, err
 			}
 
 			record := Record{
@@ -249,24 +249,24 @@ func (w *WAL) ReadWAL() error {
 		file.Close()
 	}
 
-	for _, entry := range records {
-		fmt.Printf("Timestamp: %s, Tombstone: %v, Key: %s, Value: %s\n",
-			entry.Timestamp.Format(time.RFC3339), entry.Tombstone, entry.Key, entry.Value)
-	}
-	return nil
+	// for _, entry := range records {
+	// 	fmt.Printf("Timestamp: %s, Tombstone: %v, Key: %s, Value: %s\n",
+	// 		entry.Timestamp.Format(time.RFC3339), entry.Tombstone, entry.Key, entry.Value)
+	// }
+	return records, nil
 }
 
-func (w *WAL) CleanUpWal() bool {
+func (w *WAL) CleanUpWal() {
 	files, err := filepath.Glob(filepath.Join(w.dir, "wal_"))
 	if err != nil {
 		fmt.Println(err)
-		return false
+		return
 	}
 
 	//If there is less than 20 wal segments we won't remove any
 	if len(files) < 20 {
-		fmt.Println("There is not enough segments for the clean up.")
-		return false
+		fmt.Println("There is not enough segments (20) for the clean up.")
+		return
 	}
 
 	// Remove files with index lower than the low watermark
@@ -277,7 +277,7 @@ func (w *WAL) CleanUpWal() bool {
 			err := os.Remove(file)
 			if err != nil {
 				fmt.Println(err)
-				return false
+				return
 			}
 		}
 	}
@@ -289,11 +289,9 @@ func (w *WAL) CleanUpWal() bool {
 		err := os.Rename(file, newFilename)
 		if err != nil {
 			fmt.Println(err)
-			return false
+			return
 		}
 	}
-
-	return true
 }
 
 // func main() {

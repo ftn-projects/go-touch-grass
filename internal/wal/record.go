@@ -3,6 +3,7 @@ package wal
 import "time"
 
 type Record struct {
+	FlushFlag bool
 	Timestamp time.Time
 	Tombstone bool
 	Key       []byte
