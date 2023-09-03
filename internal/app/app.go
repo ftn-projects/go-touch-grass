@@ -22,7 +22,7 @@ type App struct {
 
 func New() *App {
 	config := conf.New(getConfigPath())
-	return &App{
+	app := &App{
 		datapath: getDataPath(),
 		config:   config,
 		cache:    cache.New(config.CacheSize),
@@ -30,10 +30,26 @@ func New() *App {
 		lsm:      lsmtree.New(config, getDataPath()),
 		tbucket:  tbucket.New(config),
 	}
+	app.StartRecovery()
+	return app
 }
 
 func (app *App) CanMakeQuery() error {
 	return app.tbucket.MakeQuery()
+}
+
+func (app *App) StartRecovery() (err error) {
+	recovery_log, err := app.wal.Recover()
+	if err != nil {
+		return
+	}
+	if recovery_log == nil {
+		return nil
+	}
+	for _, v := range recovery_log {
+		app.lsm.Put(string(v.Key), v.Value)
+	}
+	return nil
 }
 
 func (app *App) Put(key string, data []byte) (err error) {
@@ -48,10 +64,13 @@ func (app *App) Put(key string, data []byte) (err error) {
 		return
 	}
 
-	err, _ = app.lsm.Put(key, data)
-	// if flushed {
-	// 	app.wal.CleanUpWal()
-	// }
+	err, flushed := app.lsm.Put(key, data)
+	if flushed {
+		app.wal.WriteRecord(wal.Record{
+			Timestamp: time.Now(),
+			FlushFlag: true,
+		})
+	}
 	return
 }
 

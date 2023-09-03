@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	fp "path/filepath"
 	"sort"
 	"time"
 )
@@ -49,7 +50,7 @@ func findHighestIndex(files []string) int {
 	highestIndex := -1 // Initialize to -1 so that any positive index is considered
 	for _, file := range files {
 		var index int
-		_, err := fmt.Sscanf(filepath.Base(file), "wal_%d", &index)
+		_, err := fmt.Sscanf(filepath.Base(file), "wal_%03d", &index)
 		if err == nil && index > highestIndex {
 			highestIndex = index
 		}
@@ -77,7 +78,7 @@ func New(logPath string, config *config.Config) *WAL {
 	highestIndex := findHighestIndex(files)
 
 	// Create a new WAL with the next index
-	filename := filepath.Join(logPath, fmt.Sprintf("wal_%d", highestIndex))
+	filename := filepath.Join(logPath, fmt.Sprintf("wal_%03d", highestIndex))
 	file, _ := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0777)
 
 	return &WAL{
@@ -110,6 +111,12 @@ func (w *WAL) WriteRecord(record Record) error {
 
 	// Write Tombstone
 	if record.Tombstone {
+		buf.WriteByte(1)
+	} else {
+		buf.WriteByte(0)
+	}
+
+	if record.FlushFlag {
 		buf.WriteByte(1)
 	} else {
 		buf.WriteByte(0)
@@ -150,7 +157,7 @@ func (w *WAL) WriteRecord(record Record) error {
 			return err
 		}
 		w.index++
-		filename := filepath.Join(w.dir, fmt.Sprintf("wal_%d", w.index))
+		filename := filepath.Join(w.dir, fmt.Sprintf("wal_%03d", w.index))
 		file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0777)
 		if err != nil {
 			return err
@@ -170,8 +177,8 @@ func (w *WAL) ReadWAL() ([]Record, error) {
 
 	sort.Slice(files, func(i, j int) bool {
 		var index1, index2 int
-		fmt.Sscanf(filepath.Base(files[i]), "wal_%d", &index1)
-		fmt.Sscanf(filepath.Base(files[j]), "wal_%d", &index2)
+		fmt.Sscanf(filepath.Base(files[i]), "wal_%03d", &index1)
+		fmt.Sscanf(filepath.Base(files[j]), "wal_%03d", &index2)
 		return index1 < index2
 	})
 
@@ -209,6 +216,14 @@ func (w *WAL) ReadWAL() ([]Record, error) {
 			}
 			tombstone := tombstoneByte == 1
 
+			var flushFlagByte byte
+			err = binary.Read(file, binary.BigEndian, &flushFlagByte)
+			if err != nil {
+				fmt.Println("Greska pri citanju flush flag-a", err)
+				return nil, err
+			}
+			flushFlag := flushFlagByte == 1
+
 			var keySize int64
 			err = binary.Read(file, binary.BigEndian, &keySize)
 			if err != nil {
@@ -238,6 +253,7 @@ func (w *WAL) ReadWAL() ([]Record, error) {
 			}
 
 			record := Record{
+				FlushFlag: flushFlag,
 				Timestamp: timestamp,
 				Tombstone: tombstone,
 				Key:       key,
@@ -272,7 +288,7 @@ func (w *WAL) CleanUpWal() {
 	// Remove files with index lower than the low watermark
 	for _, file := range files {
 		var index int
-		_, err := fmt.Sscanf(filepath.Base(file), "wal_%d", &index)
+		_, err := fmt.Sscanf(filepath.Base(file), "wal_%03d", &index)
 		if err == nil && index < w.lwm {
 			err := os.Remove(file)
 			if err != nil {
@@ -285,7 +301,7 @@ func (w *WAL) CleanUpWal() {
 	// Update indexes to start with 0 again
 	for i, file := range files {
 		newIndex := i
-		newFilename := filepath.Join(w.dir, fmt.Sprintf("wal_%d", newIndex))
+		newFilename := filepath.Join(w.dir, fmt.Sprintf("wal_%03d", newIndex))
 		err := os.Rename(file, newFilename)
 		if err != nil {
 			fmt.Println(err)
@@ -294,28 +310,118 @@ func (w *WAL) CleanUpWal() {
 	}
 }
 
-// func main() {
-// 	mojWal := New()
+func (w *WAL) ReadSegment(path string) ([]Record, error) {
+	file, err := os.OpenFile(path, os.O_RDONLY, 066)
+	var records []Record
+	if err != nil {
+		return nil, err
+	}
 
-// 	var records []Record
+	for {
+		var crc uint32
+		err := binary.Read(file, binary.BigEndian, &crc)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			fmt.Println("Greška prilikom čitanja crc:", err)
+			return nil, err
+		}
 
-// 	records = append(records, *NewRecord(time.Now(), false, []byte("milica"), []byte("123")))
-// 	records = append(records, *NewRecord(time.Now(), false, []byte("poop"), []byte("shitttt")))
-// 	records = append(records, *NewRecord(time.Now(), true, []byte("milica"), []byte("123")))
-// 	records = append(records, *NewRecord(time.Now(), false, []byte("milica"), []byte("betterpass!")))
+		var timestampUnix int64
+		err = binary.Read(file, binary.BigEndian, &timestampUnix)
+		if err != nil {
+			fmt.Println("Greška prilikom čitanja vremenske oznake:", err)
+			return nil, err
+		}
+		timestamp := time.Unix(timestampUnix, 0)
 
-// 	for _, record := range records {
-// 		err := mojWal.WriteRecord(record)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 	}
+		var tombstoneByte byte
+		err = binary.Read(file, binary.BigEndian, &tombstoneByte)
+		if err != nil {
+			fmt.Println("Greška prilikom čitanja Tombstone:", err)
+			return nil, err
+		}
+		tombstone := tombstoneByte == 1
 
-// 	err := mojWal.ReadWAL()
-// 	if err != nil {
-// 		fmt.Println(err)
-// 	}
+		var flushFlagByte byte
+		err = binary.Read(file, binary.BigEndian, &flushFlagByte)
+		if err != nil {
+			fmt.Println("Greska pri citanju flush flag-a", err)
+			return nil, err
+		}
+		flushFlag := flushFlagByte == 1
 
-// 	cleaned := mojWal.cleanUpWal()
-// 	fmt.Println(cleaned)
-// }
+		var keySize int64
+		err = binary.Read(file, binary.BigEndian, &keySize)
+		if err != nil {
+			fmt.Println("Greška prilikom čitanja veličine ključa:", err)
+			return nil, err
+		}
+
+		var valueSize int64
+		err = binary.Read(file, binary.BigEndian, &valueSize)
+		if err != nil {
+			fmt.Println("Greška prilikom čitanja veličine vrednosti:", err)
+			return nil, err
+		}
+
+		key := make([]byte, keySize)
+		_, err = file.Read(key)
+		if err != nil {
+			fmt.Println("Greška prilikom čitanja ključa:", err)
+			return nil, err
+		}
+
+		value := make([]byte, valueSize)
+		_, err = file.Read(value)
+		if err != nil {
+			fmt.Println("Greška prilikom čitanja vrednosti:", err)
+			return nil, err
+		}
+
+		record := Record{
+			FlushFlag: flushFlag,
+			Timestamp: timestamp,
+			Tombstone: tombstone,
+			Key:       key,
+			Value:     value,
+		}
+
+		records = append(records, record)
+	}
+	file.Close()
+
+	return records, nil
+
+}
+
+func (w *WAL) Recover() ([]Record, error) {
+	recovery_log := make([]Record, 0)
+	wal_dir, err := os.Open(w.dir)
+	if err != nil {
+		return nil, err
+	}
+	segments, err := wal_dir.ReadDir(0)
+	if err != nil {
+		return nil, err
+	}
+	segment_paths := make([]string, 0)
+	for _, v := range segments {
+		segment_paths = append(segment_paths, fp.Join(w.dir, v.Name()))
+	}
+	sort.StringSlice.Sort(segment_paths)
+
+	for i := len(segment_paths) - 1; i >= 0; i-- {
+		segment, err := w.ReadSegment(segment_paths[i])
+		if err != nil {
+			return nil, err
+		}
+		for j := len(segment) - 1; j >= 0; j-- {
+			if segment[j].FlushFlag {
+				return recovery_log, nil
+			}
+			recovery_log = append(recovery_log, segment[j])
+		}
+	}
+	return recovery_log, nil
+}
