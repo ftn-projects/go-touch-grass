@@ -8,10 +8,11 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
-	"path/filepath"
 	fp "path/filepath"
 	"sort"
 	"time"
+
+	"golang.org/x/exp/slices"
 )
 
 /*
@@ -50,7 +51,7 @@ func findHighestIndex(files []string) int {
 	highestIndex := -1 // Initialize to -1 so that any positive index is considered
 	for _, file := range files {
 		var index int
-		_, err := fmt.Sscanf(filepath.Base(file), "wal_%03d", &index)
+		_, err := fmt.Sscanf(fp.Base(file), "wal_%03d", &index)
 		if err == nil && index > highestIndex {
 			highestIndex = index
 		}
@@ -74,11 +75,11 @@ type WAL struct {
 func New(logPath string, config *config.Config) *WAL {
 	os.MkdirAll(logPath, 0777)
 
-	files, _ := filepath.Glob(filepath.Join(logPath, "wal_"))
+	files, _ := fp.Glob(fp.Join(logPath, "wal_"))
 	highestIndex := findHighestIndex(files)
 
 	// Create a new WAL with the next index
-	filename := filepath.Join(logPath, fmt.Sprintf("wal_%03d", highestIndex))
+	filename := fp.Join(logPath, fmt.Sprintf("wal_%03d", highestIndex))
 	file, _ := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0777)
 
 	return &WAL{
@@ -157,7 +158,7 @@ func (w *WAL) WriteRecord(record Record) error {
 			return err
 		}
 		w.index++
-		filename := filepath.Join(w.dir, fmt.Sprintf("wal_%03d", w.index))
+		filename := fp.Join(w.dir, fmt.Sprintf("wal_%03d", w.index))
 		file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0777)
 		if err != nil {
 			return err
@@ -170,15 +171,15 @@ func (w *WAL) WriteRecord(record Record) error {
 
 // pitaj ih jel bi radije da vraca listu recordsa
 func (w *WAL) ReadWAL() ([]Record, error) {
-	files, err := filepath.Glob(filepath.Join(w.dir, "wal_*"))
+	files, err := fp.Glob(fp.Join(w.dir, "wal_*"))
 	if err != nil {
 		return nil, err
 	}
 
 	sort.Slice(files, func(i, j int) bool {
 		var index1, index2 int
-		fmt.Sscanf(filepath.Base(files[i]), "wal_%03d", &index1)
-		fmt.Sscanf(filepath.Base(files[j]), "wal_%03d", &index2)
+		fmt.Sscanf(fp.Base(files[i]), "wal_%03d", &index1)
+		fmt.Sscanf(fp.Base(files[j]), "wal_%03d", &index2)
 		return index1 < index2
 	})
 
@@ -273,7 +274,7 @@ func (w *WAL) ReadWAL() ([]Record, error) {
 }
 
 func (w *WAL) CleanUpWal() {
-	files, err := filepath.Glob(filepath.Join(w.dir, "wal_"))
+	files, err := fp.Glob(fp.Join(w.dir, "wal_"))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -281,14 +282,14 @@ func (w *WAL) CleanUpWal() {
 
 	//If there is less than 20 wal segments we won't remove any
 	if len(files) < 20 {
-		fmt.Println("There is not enough segments (20) for the clean up.")
+		fmt.Println("Nema dovoljno segmenata (20) za ciscenje.")
 		return
 	}
 
 	// Remove files with index lower than the low watermark
 	for _, file := range files {
 		var index int
-		_, err := fmt.Sscanf(filepath.Base(file), "wal_%03d", &index)
+		_, err := fmt.Sscanf(fp.Base(file), "wal_%03d", &index)
 		if err == nil && index < w.lwm {
 			err := os.Remove(file)
 			if err != nil {
@@ -301,7 +302,7 @@ func (w *WAL) CleanUpWal() {
 	// Update indexes to start with 0 again
 	for i, file := range files {
 		newIndex := i
-		newFilename := filepath.Join(w.dir, fmt.Sprintf("wal_%03d", newIndex))
+		newFilename := fp.Join(w.dir, fmt.Sprintf("wal_%03d", newIndex))
 		err := os.Rename(file, newFilename)
 		if err != nil {
 			fmt.Println(err)
@@ -423,5 +424,7 @@ func (w *WAL) Recover() ([]Record, error) {
 			recovery_log = append(recovery_log, segment[j])
 		}
 	}
+
+	slices.Reverse(recovery_log)
 	return recovery_log, nil
 }

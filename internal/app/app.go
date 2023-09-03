@@ -111,15 +111,22 @@ func (app *App) Delete(key string) (err error) {
 		return
 	}
 
-	err, _ = app.lsm.Delete(key)
-	// if flushed {
-	// 	app.wal.CleanUpWal()
-	// }
+	err, flushed := app.lsm.Delete(key)
+	if flushed {
+		app.wal.WriteRecord(wal.Record{
+			Timestamp: time.Now(),
+			FlushFlag: true,
+		})
+	}
 	return
 }
 
 func (app *App) InitiateCompaction() error {
 	return app.lsm.CompactLevel(1)
+}
+
+func (app *App) CleanupWal() {
+	app.wal.CleanUpWal()
 }
 
 func getConfigPath() string {

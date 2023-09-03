@@ -21,6 +21,7 @@ func (m *Menu) PrintMenu() {
 	fmt.Println("2 Pronadji podatak")
 	fmt.Println("3 Obrisi podatak")
 	fmt.Println("4 Pokreni kompakciju")
+	fmt.Println("5 Pokreni ciscenje WAL")
 	fmt.Println("q Izadji")
 	fmt.Println("------------------------")
 }
@@ -47,6 +48,8 @@ func (m *Menu) Show() {
 			m.HandleDelete(sc, app)
 		case "4":
 			m.HandleCompaction(sc, app)
+		case "5":
+			m.HandleWalCleanup(sc, app)
 		case "q":
 			return
 		default:
@@ -113,4 +116,18 @@ func (m *Menu) HandleCompaction(sc *bufio.Scanner, app *app.App) {
 	} else {
 		fmt.Println("Kompakcija uspesno izvrsena.")
 	}
+}
+
+func (m *Menu) HandleWalCleanup(sc *bufio.Scanner, app *app.App) {
+	fmt.Print("Sredi WAL (Y/n): ")
+	c := util.ScanLowerString(sc)
+
+	if c == "n" {
+		return
+	} else if c != "y" {
+		fmt.Println("greska: nepostojeca opcija")
+		return
+	}
+
+	app.CleanupWal()
 }
