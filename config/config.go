@@ -20,6 +20,9 @@ type Config struct {
 	WalSegmentSize       int64
 	TBucketResetDuration int64
 	TBucketMaxTokens     int
+	LsmMaxLevel          int
+	LsmLevelSize         int
+	MerkleChunkSize      int64
 }
 
 func (c Config) Save() {
@@ -42,7 +45,7 @@ func getDefault() *Config {
 	return &Config{
 		SkiplistMaxHeight:    10,
 		BtreeDegree:          4,
-		MemtableCap:          10,
+		MemtableCap:          2,
 		MemtableContainer:    "skiplist",
 		SSTableAllInOne:      false,
 		FilterPrecision:      0.01,
@@ -52,6 +55,9 @@ func getDefault() *Config {
 		WalSegmentSize:       1024 * 1024,
 		TBucketResetDuration: 2000,
 		TBucketMaxTokens:     5,
+		LsmMaxLevel:          4,
+		LsmLevelSize:         2,
+		MerkleChunkSize:      100,
 	}
 }
 

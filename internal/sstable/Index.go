@@ -10,9 +10,9 @@ import (
 )
 
 type Index struct {
-	indexfile string
-	offset    int64
-	size      uint64
+	Indexfile string
+	Offset    int64
+	Size      uint64
 }
 
 type IndexElement struct {
@@ -23,9 +23,9 @@ type IndexElement struct {
 
 func NewIndex(filename string, offset int64, size uint64) *Index {
 	i := &Index{}
-	i.indexfile = filename
-	i.offset = offset
-	i.size = size
+	i.Indexfile = filename
+	i.Offset = offset
+	i.Size = size
 	return i
 }
 
@@ -36,13 +36,13 @@ func (index *Index) Find(key string) int64 {
 	//	- key : A key that we are searching for
 	// Return:
 	//	- offset where should we seek for our data or -1 key was not found
-	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
+	file, err := os.OpenFile(index.Indexfile, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
-	i := index.offset
-	for i < index.offset+int64(index.size) {
+	i := index.Offset
+	for i < index.Offset+int64(index.Size) {
 		file.Seek(i, 0) // mora je izgleda da reader if bufio sam pozicionira file na kraj??
 		el, bytesRead := ReadNextIndexRecord(file)
 		if el.Key == key {
@@ -56,14 +56,14 @@ func (index *Index) Find(key string) int64 {
 func (index *Index) PrintIndex() {
 	// Function used for testing
 	// Iterating through index structure and printing all values
-	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
+	file, err := os.OpenFile(index.Indexfile, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
 
-	i, _ := file.Seek(index.offset, 0)
+	i, _ := file.Seek(index.Offset, 0)
 
-	for i < int64(index.size)+index.offset {
+	for i < int64(index.Size)+index.Offset {
 		el, bytesRead := ReadNextIndexRecord(file)
 		fmt.Println(el.KeySize, "    ", string(el.Key), "    ", el.Offset)
 		i += bytesRead
@@ -82,14 +82,14 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint64) []uint64
 	offset := int64(0)
 	key_offsets := make([]uint64, len(keys))
 
-	file, err := os.OpenFile(index.indexfile, os.O_WRONLY|os.O_CREATE, 0666)
+	file, err := os.OpenFile(index.Indexfile, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 	writer := bufio.NewWriter(file)
 
-	offset, _ = file.Seek(index.offset, 0)
+	offset, _ = file.Seek(index.Offset, 0)
 
 	for i := 0; i < len(keys); i++ {
 		key := []byte(keys[i])
@@ -112,7 +112,7 @@ func (index *Index) CreateIndexSegment(keys []string, offsets []uint64) []uint64
 		}
 		writer.Reset(file)
 	}
-	index.size = uint64(offset - index.offset)
+	index.Size = uint64(offset - index.Offset)
 	return key_offsets
 }
 
@@ -161,17 +161,17 @@ func (index *Index) FindBetweenRange(key string, lower_bound int64, upper_bound 
 	//	- lower_bound : offset in file from where we begin our scanning
 	//	- upper_bound : offset where search would end if key was not found
 	// Return Value : Index element which contains: Key, KeySize and Offset of that Record in Data Segment
-	file, err := os.OpenFile(index.indexfile, os.O_RDONLY, 0666)
+	file, err := os.OpenFile(index.Indexfile, os.O_RDONLY, 0666)
 
 	if err != nil {
 		panic(err)
 	}
 
-	if lower_bound < index.offset || lower_bound > int64(index.size+uint64(index.offset)) {
+	if lower_bound < index.Offset || lower_bound > int64(index.Size+uint64(index.Offset)) {
 		panic(errors.New("Out of range"))
 	}
 
-	if upper_bound > int64(index.size+uint64(index.offset)) || upper_bound < index.offset {
+	if upper_bound > int64(index.Size+uint64(index.Offset)) || upper_bound < index.Offset {
 		panic(errors.New("Out of range"))
 	}
 	if lower_bound > upper_bound {

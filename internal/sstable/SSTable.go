@@ -10,8 +10,11 @@ import (
 	"go-touch-grass/config"
 	"go-touch-grass/internal/bloom"
 	"go-touch-grass/internal/memtable"
+	"go-touch-grass/internal/merkle"
 	"go-touch-grass/internal/summary"
+	"go-touch-grass/internal/util"
 	"os"
+	fp "path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,39 +34,36 @@ type TOC struct {
 	SummaryPath   string
 	SummaryOffset int64
 	SummarySize   uint64
+	MetadataPath  string
 }
 
 type SSTable struct {
-	FilePathBase       string
-	DataSegmentPath    string
-	DataSegmentSize    uint64
-	SummarySegmentPath string
-	SummaryOffset      int64
-	SummarySize        uint64
-	FilterPath         string
-	FilterOffset       int64
-	FilterSize         uint64
-	TOCFilePath        string
-	Index              *Index
+	FilePathBase string
+	Toc          *TOC
+	TOCFilePath  string
+	Index        *Index
 }
 
-func NewSSTable(conf *config.Config) *SSTable {
+func NewSSTable(conf *config.Config, dataPath string, level string) *SSTable {
 	// Creating file paths for new SSTable
 	// Modify it for LSM Tree levels
-	table := &SSTable{FilePathBase: "./data/SSTables/usertable-"}
-	gen := fmt.Sprintf("%03d", GetNextGeneration())
+	table := &SSTable{FilePathBase: fp.Join(dataPath, level, "usertable-")}
+	gen := fmt.Sprintf("%03d", GetNextGeneration(dataPath, level))
+	table.Toc = &TOC{}
 	if !conf.SSTableAllInOne {
-		table.DataSegmentPath = table.FilePathBase + gen + "-data.db"
-		table.FilterPath = table.FilePathBase + gen + "-filter.db"
-		table.SummarySegmentPath = table.FilePathBase + gen + "-summary.db"
+		table.Toc.DataPath = table.FilePathBase + gen + "-data.db"
+		table.Toc.FilterPath = table.FilePathBase + gen + "-filter.db"
+		table.Toc.SummaryPath = table.FilePathBase + gen + "-summary.db"
 		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
+		table.Toc.MetadataPath = table.FilePathBase + gen + "-metadata.txt"
 		table.Index = NewIndex(table.FilePathBase+gen+"-index.db", 0, 0)
 	} else {
 		temp := table.FilePathBase + gen + "-SSTable.db"
-		table.DataSegmentPath = temp
-		table.FilterPath = temp
+		table.Toc.DataPath = temp
+		table.Toc.FilterPath = temp
 		table.Index = NewIndex(temp, 0, 0)
-		table.SummarySegmentPath = temp
+		table.Toc.SummaryPath = temp
+		table.Toc.MetadataPath = table.FilePathBase + gen + "-metadata.txt"
 		table.TOCFilePath = table.FilePathBase + gen + "-TOC.yaml"
 
 	}
@@ -71,7 +71,7 @@ func NewSSTable(conf *config.Config) *SSTable {
 	return table
 }
 
-func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) {
+func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, c config.Config) {
 	// Function used for making SSTable on Disk
 	// Getting data from memtable (traversing a BTree or SkipList)
 	// Saving data in data segment, creating index and serializing it
@@ -84,9 +84,9 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 	keys := make([]string, len(data))
 	offsets := make([]uint64, len(data))
 
-	bf := bloom.New(uint64(len(data)), 0.001)
+	bf := bloom.New(uint64(len(data)), c.FilterPrecision)
 
-	data_file, err := os.Create(sstable.DataSegmentPath)
+	data_file, err := os.Create(sstable.Toc.DataPath)
 	if err != nil {
 		panic(err)
 	}
@@ -151,84 +151,75 @@ func (sstable *SSTable) WriteNewSSTable(data []memtable.Record, isOneFile bool) 
 
 	}
 
-	sstable.DataSegmentSize = uint64(file_offset)
+	sstable.Toc.DataSize = uint64(file_offset)
 	var key_offsets []uint64
 	// Creating index segment
-	sstable.Index.offset = 0
-	if isOneFile {
-		sstable.Index.offset = int64(file_offset)
+	sstable.Index.Offset = 0
+	if c.SSTableAllInOne {
+		sstable.Index.Offset = int64(file_offset)
 		key_offsets = sstable.Index.CreateIndexSegment(keys, offsets)
-		file_offset += sstable.Index.size
+		file_offset += sstable.Index.Size
 		data_file.Seek(int64(file_offset), 0)
 	} else {
 		key_offsets = sstable.Index.CreateIndexSegment(keys, offsets)
 	}
 
 	// Creating Summary
-	s := summary.New(4, keys, key_offsets)
-	sstable.SummaryOffset = 0
-	if isOneFile {
-		sstable.SummaryOffset = int64(file_offset)
-		sstable.SummarySize = uint64(s.Serialize(data_file))
-		file_offset += sstable.SummarySize
+	s := summary.New(c.SummaryStep, keys, key_offsets)
+	sstable.Toc.SummaryOffset = 0
+	if c.SSTableAllInOne {
+		sstable.Toc.SummaryOffset = int64(file_offset)
+		sstable.Toc.SummarySize = uint64(s.Serialize(data_file))
+		file_offset += sstable.Toc.SummarySize
 		data_file.Seek(int64(file_offset), 0)
 	} else {
-		sfile, _ := os.Create(sstable.SummarySegmentPath)
-		sstable.SummarySize = uint64(s.Serialize(sfile))
+		sfile, _ := os.Create(sstable.Toc.SummaryPath)
+		sstable.Toc.SummarySize = uint64(s.Serialize(sfile))
 		sfile.Close()
 	}
 
 	// Creating filter segment
-	sstable.FilterOffset = 0
-	if isOneFile {
-		sstable.FilterOffset = int64(file_offset)
-		sstable.FilterSize = uint64(bf.Serialize(data_file))
-		file_offset += sstable.FilterSize
+	sstable.Toc.FilterOffset = 0
+	if c.SSTableAllInOne {
+		sstable.Toc.FilterOffset = int64(file_offset)
+		sstable.Toc.FilterSize = uint64(bf.Serialize(data_file))
+		file_offset += sstable.Toc.FilterSize
 		data_file.Seek(int64(file_offset), 0)
 	} else {
-		bffile, _ := os.Create(sstable.FilterPath)
-		sstable.FilterSize = uint64(bf.Serialize(bffile))
+		bffile, _ := os.Create(sstable.Toc.FilterPath)
+		sstable.Toc.FilterSize = uint64(bf.Serialize(bffile))
 		bffile.Close()
 	}
 
 	sstable.CreateTOC()
-	return
+	sstable.CreateMerkle()
 }
 
-func (sstable *SSTable) Read(offset int64) {
+func (sstable *SSTable) Read(offset int64) ([]byte, bool) {
 	// Function used to read segment from DataSegment
-	data_file, err := os.OpenFile(sstable.DataSegmentPath, os.O_RDONLY, 0666)
+	data_file, err := os.OpenFile(sstable.Toc.DataPath, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
 	data_file.Seek(offset, 1)
-	temp := ReadNextDataRecord(data_file)
+	temp, _ := ReadNextDataRecord(data_file)
 	// Mozda je bolje vratiti value nazad funkciji koja poziva ovu funkciju
-	fmt.Println(temp.CRC, "   ", temp.Tombstone, "    ", temp.Timestamp.String(), "     ", temp.Key, "    ", string(temp.Value))
+	return temp.Value, temp.Tombstone
 }
 
 func (sstable *SSTable) CreateTOC() {
 	// Creating Table of Contents and saving it in file
-	toc := &TOC{}
-	toc.DataPath = sstable.DataSegmentPath
-	toc.IndexPath = sstable.Index.indexfile
-	toc.IndexOffest = int64(sstable.Index.offset)
-	toc.IndexSize = uint64(sstable.Index.size)
-	toc.FilterPath = sstable.FilterPath
-	toc.FilterSize = sstable.FilterSize
-	toc.FilterOffset = sstable.FilterOffset
-	toc.SummaryOffset = sstable.SummaryOffset
-	toc.SummarySize = sstable.SummarySize
-	toc.SummaryPath = sstable.SummarySegmentPath
-	toc.DataSize = sstable.DataSegmentSize
-	toc.Save(sstable.TOCFilePath)
+	sstable.Toc.IndexOffest = sstable.Index.Offset
+	sstable.Toc.IndexSize = sstable.Index.Size
+	sstable.Toc.IndexPath = sstable.Index.Indexfile
+	sstable.Toc.Save(sstable.TOCFilePath)
 }
 
-func GetNextGeneration() int {
+func GetNextGeneration(dataPath string, level string) int {
 	// Utility function used for getting the next number for generation
 	// Return:
 	// 	- Last generation + 1
-	file, err := os.Open("./data/SSTables")
+	file, err := os.Open(fp.Join(dataPath, level))
 	if err != nil {
 		panic(err)
 	}
@@ -258,22 +249,14 @@ func GetNextGeneration() int {
 	return max + 1
 }
 
-func GetTOC(generation int) *TOC {
+func GetTOC(toc_path string) *TOC {
 	// Loading a TOC
 	// Parameters:
 	//	- generation : selecting a sstable to pick, if it is 0 we return the last made SSTable
 	// Return:
 	//	- Pointer to TOC
-	if generation <= 0 {
-		generation = GetNextGeneration() - 1
-	}
-	if generation < 1 {
-		fmt.Println("No data saved")
-		return nil
-	}
-	gen := fmt.Sprintf("%03d", generation)
 
-	file, err := os.OpenFile("./data/SSTables/usertable-"+gen+"-TOC.yaml", os.O_RDONLY, 0666)
+	file, err := os.OpenFile(toc_path, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
@@ -312,7 +295,7 @@ func tryLoad(path string) (*TOC, bool) {
 	return &c, err == nil
 }
 
-func ReadNextDataRecord(file *os.File) DataElement {
+func ReadNextDataRecord(file *os.File) (DataElement, uint64) {
 	// Utility function used for reading next element in data segment
 	// Parameters:
 	//	- file : opened file that is already seeked on a corresponding postion
@@ -371,45 +354,75 @@ func ReadNextDataRecord(file *os.File) DataElement {
 		panic(err)
 	}
 
-	return DataElement{CRC: crcv, Timestamp: timestamp, Tombstone: tombstone, KeySize: keySize, ValueSize: valueSize, Key: string(key), Value: value}
+	return DataElement{
+		CRC:       crcv,
+		Timestamp: timestamp,
+		Tombstone: tombstone,
+		KeySize:   keySize,
+		ValueSize: valueSize,
+		Key:       string(key),
+		Value:     value,
+	}, uint64(keySize + valueSize + 37)
 }
 
 func GetSSTable(toc *TOC) *SSTable {
 	t := &SSTable{}
-	t.DataSegmentSize = toc.DataSize
-	t.DataSegmentPath = toc.DataPath
-	t.FilterPath = toc.FilterPath
-	t.FilterOffset = toc.FilterOffset
-	t.FilterSize = toc.FilterSize
-	t.SummarySegmentPath = toc.SummaryPath
-	t.SummaryOffset = toc.SummaryOffset
-	t.SummarySize = toc.SummarySize
+	t.Toc = toc
 	t.Index = NewIndex(toc.IndexPath, int64(toc.IndexOffest), uint64(toc.IndexSize))
 
 	return t
 }
 
 func (t *SSTable) QueryBloomFilter(key string) bool {
-	file, err := os.OpenFile(t.FilterPath, os.O_RDONLY, 0666)
+	file, err := os.OpenFile(t.Toc.FilterPath, os.O_RDONLY, 0666)
 	if err != nil {
 		panic(err)
 	}
-	file.Seek(t.FilterOffset, 0)
+	file.Seek(t.Toc.FilterOffset, 0)
 	bf := bloom.Deserialize(file)
 	return bf.Has(key)
 }
 
 func (t *SSTable) QuerySummary(key string) (int64, int64) {
-	summary_file, _ := os.Open(t.SummarySegmentPath)
+	summary_file, _ := os.Open(t.Toc.SummaryPath)
 	defer summary_file.Close()
-	summary_file.Seek(t.SummaryOffset, 0)
+	summary_file.Seek(t.Toc.SummaryOffset, 0)
 	first_key, last_key, bytes_read := summary.DeserializeHeader(summary_file)
 	if summary.IsBetweenKeys(first_key, last_key, key) {
-		summary_file.Seek(t.SummaryOffset+int64(bytes_read), 0)
-		s := summary.Deserialize(summary_file, int(t.SummarySize-uint64(bytes_read)))
+		summary_file.Seek(t.Toc.SummaryOffset+int64(bytes_read), 0)
+		s := summary.Deserialize(summary_file, int(t.Toc.SummarySize-uint64(bytes_read)))
 		first, last := s.GetOffset(key)
 
 		return int64(first), int64(last)
 	}
 	return -1, -1
+}
+func (t *SSTable) CreateMerkle() {
+	leafs := make([]*merkle.Node, 0)
+	shunk_size := 100
+	max := t.Toc.DataSize
+	file, _ := os.Open(t.Toc.DataPath)
+	i := 0
+	for {
+		if i >= int(max) {
+			break
+		} else if i+100 > int(max) {
+			len := int(max) - i
+			t, err := util.ReadBytes(len, file)
+			leafs = append(leafs, merkle.GetLeaf(t))
+			if err != nil {
+				panic(err)
+			}
+			break
+		} else {
+			t, err := util.ReadBytes(shunk_size, file)
+			if err != nil {
+				panic(err)
+			}
+			leafs = append(leafs, merkle.GetLeaf(t))
+			i += shunk_size
+		}
+	}
+	mt := merkle.NewMerkleTree(leafs)
+	mt.Save(t.Toc.MetadataPath)
 }

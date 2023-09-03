@@ -1,7 +1,27 @@
 package main
 
+import (
+	"fmt"
+	"go-touch-grass/config"
+	"go-touch-grass/internal/app"
+	"go-touch-grass/internal/lsmtree"
+)
+
 func main() {
-	// conf := config.New()
+	conf := config.New(app.GetConfigPath())
+	lsm := lsmtree.New(*conf, app.GetDataPath())
+	lsm.Put("r", []byte("a"))
+	lsm.Put("s", []byte("b"))
+	lsm.Put("s", []byte("g"))
+	lsm.Put("a", []byte("c"))
+
+	lsm.Delete("a")
+	lsm.Delete("r")
+	lsm.Put("a", []byte("//"))
+	lsm.Delete("r")
+	fmt.Println(lsm.GetFromMemtable("a"))
+	fmt.Println(lsm.GetFromDisc("a"))
+
 	// mem := memtable.GetExample()
 	// sstable.NewSSTable(conf).WriteNewSSTable(mem.GetAll(), conf.SSTableAllInOne)
 	// toc := sstable.GetTOC(0)

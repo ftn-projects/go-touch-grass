@@ -8,7 +8,6 @@ import (
 	"go-touch-grass/internal/wal"
 	"os"
 	fp "path/filepath"
-	"runtime"
 )
 
 type App struct {
@@ -21,12 +20,12 @@ type App struct {
 }
 
 func New() *App {
-	config := conf.New(getConfigPath())
+	config := conf.New(GetConfigPath())
 	return &App{
-		datapath: getDataPath(),
+		datapath: GetDataPath(),
 		config:   config,
 		cache:    cache.New(config.CacheSize),
-		wal:      wal.New(fp.Join(getDataPath(), "wal"), config),
+		wal:      wal.New(fp.Join(GetDataPath(), "wal"), config),
 		tbucket:  tbucket.New(config),
 		// lsm: lsm.New()
 	}
@@ -74,20 +73,15 @@ func (app *App) Delete(key string) {
 	// LSM.Delete(key)
 }
 
-func getRootPath() string {
-	_, path, _, _ := runtime.Caller(0)
-	return fp.Dir(fp.Dir(fp.Dir(path)))
+func GetConfigPath() string {
+	return fp.Join("./config", "config.yaml")
 }
 
-func getConfigPath() string {
-	return fp.Join(getRootPath(), "config", "config.yaml")
-}
-
-func getDataPath() string {
-	path := fp.Join(getRootPath(), "data")
+func GetDataPath() string {
+	path := fp.Join("./data")
 	_, err := os.Stat(path)
 	if err != nil {
-		os.Mkdir(path, 0666)
+		os.Mkdir(path, 0755)
 	}
 	return path
 }
