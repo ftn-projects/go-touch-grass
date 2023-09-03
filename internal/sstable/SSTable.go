@@ -202,7 +202,7 @@ func (sstable *SSTable) Read(offset int64) ([]byte, bool) {
 		panic(err)
 	}
 	data_file.Seek(offset, 1)
-	temp := ReadNextDataRecord(data_file)
+	temp, _ := ReadNextDataRecord(data_file)
 	// Mozda je bolje vratiti value nazad funkciji koja poziva ovu funkciju
 	return temp.Value, temp.Tombstone
 }
@@ -295,7 +295,7 @@ func tryLoad(path string) (*TOC, bool) {
 	return &c, err == nil
 }
 
-func ReadNextDataRecord(file *os.File) DataElement {
+func ReadNextDataRecord(file *os.File) (DataElement, uint64) {
 	// Utility function used for reading next element in data segment
 	// Parameters:
 	//	- file : opened file that is already seeked on a corresponding postion
@@ -354,7 +354,15 @@ func ReadNextDataRecord(file *os.File) DataElement {
 		panic(err)
 	}
 
-	return DataElement{CRC: crcv, Timestamp: timestamp, Tombstone: tombstone, KeySize: keySize, ValueSize: valueSize, Key: string(key), Value: value}
+	return DataElement{
+		CRC:       crcv,
+		Timestamp: timestamp,
+		Tombstone: tombstone,
+		KeySize:   keySize,
+		ValueSize: valueSize,
+		Key:       string(key),
+		Value:     value,
+	}, uint64(keySize + valueSize + 37)
 }
 
 func GetSSTable(toc *TOC) *SSTable {
@@ -391,7 +399,7 @@ func (t *SSTable) QuerySummary(key string) (int64, int64) {
 }
 func (t *SSTable) CreateMerkle() {
 	leafs := make([]*merkle.Node, 0)
-	len := 100
+	shunk_size := 100
 	max := t.Toc.DataSize
 	file, _ := os.Open(t.Toc.DataPath)
 	i := 0
@@ -407,11 +415,12 @@ func (t *SSTable) CreateMerkle() {
 			}
 			break
 		} else {
-			t, err := util.ReadBytes(len, file)
-			leafs = append(leafs, merkle.GetLeaf(t))
+			t, err := util.ReadBytes(shunk_size, file)
 			if err != nil {
 				panic(err)
 			}
+			leafs = append(leafs, merkle.GetLeaf(t))
+			i += shunk_size
 		}
 	}
 	mt := merkle.NewMerkleTree(leafs)

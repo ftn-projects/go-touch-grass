@@ -8,7 +8,6 @@ import (
 	"go-touch-grass/internal/wal"
 	"os"
 	fp "path/filepath"
-	"runtime"
 )
 
 type App struct {
@@ -74,17 +73,12 @@ func (app *App) Delete(key string) {
 	// LSM.Delete(key)
 }
 
-func getRootPath() string {
-	_, path, _, _ := runtime.Caller(0)
-	return fp.Dir(fp.Dir(fp.Dir(path)))
-}
-
 func GetConfigPath() string {
-	return fp.Join(getRootPath(), "config", "config.yaml")
+	return fp.Join("./config", "config.yaml")
 }
 
 func GetDataPath() string {
-	path := fp.Join(getRootPath(), "data")
+	path := fp.Join("./data")
 	_, err := os.Stat(path)
 	if err != nil {
 		os.Mkdir(path, 0755)

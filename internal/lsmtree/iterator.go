@@ -6,8 +6,9 @@ import (
 )
 
 type ssTableIterator struct {
-	table *sstable.SSTable
-	file  *os.File
+	table    *sstable.SSTable
+	file     *os.File
+	position uint64
 }
 
 func newIterator(toc *sstable.TOC) *ssTableIterator {
@@ -19,17 +20,18 @@ func newIterator(toc *sstable.TOC) *ssTableIterator {
 	}
 }
 
-func (it *ssTableIterator) End() bool {
-	return it.file == nil
-}
+func (it *ssTableIterator) Read() *sstable.DataElement {
+	if it.file == nil {
+		return nil
+	}
 
-func (it *ssTableIterator) Read() sstable.DataElement {
-	record := sstable.ReadNextDataRecord(it.file)
-	offset, _ := it.file.Seek(0, 1)
+	it.file.Seek(int64(it.position), 0)
+	record, b := sstable.ReadNextDataRecord(it.file)
+	it.position += b
 
-	if offset >= int64(it.table.Toc.DataSize) {
+	if it.position >= it.table.Toc.DataSize {
 		it.file.Close()
 		it.file = nil
 	}
-	return record
+	return &record
 }

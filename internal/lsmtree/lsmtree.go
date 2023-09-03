@@ -54,12 +54,16 @@ func (lsm *LSMTree) LevelFull(level int) bool {
 
 func (lsm *LSMTree) CreateNewLevel() {
 	max_num_lvl := lsm.getMaxLevelNumber() + 1
-	newDir := "./data/level-" + formatLevel(max_num_lvl)
+	if max_num_lvl >= lsm.conf.LsmMaxLevel {
+		fmt.Println("Dostignuta maksimalna visina LSM stabla.")
+	}
+
+	newDir := fp.Join(lsm.dataPath, "level-"+formatLevel(max_num_lvl))
 	err := os.Mkdir(newDir, 0755)
-	lsm.levels = append(lsm.levels, newDir)
 	if err != nil {
 		panic(err)
 	}
+	lsm.levels = append(lsm.levels, newDir)
 }
 
 func (lsm *LSMTree) getMaxLevelNumber() int {
@@ -108,7 +112,7 @@ func New(conf config.Config, dataPath string) *LSMTree {
 	return lsm
 }
 
-func writeRecord(w io.Writer, rec sstable.DataElement) uint64 {
+func writeRecord(w io.Writer, rec *sstable.DataElement) uint64 {
 	n := 37
 	tsBytes := make([]byte, 16)
 	binary.BigEndian.PutUint64(tsBytes[:8], uint64(rec.Timestamp.Unix()))
@@ -123,9 +127,32 @@ func writeRecord(w io.Writer, rec sstable.DataElement) uint64 {
 	return uint64(n + k + v)
 }
 
+func getMinRecord(records []*sstable.DataElement) (int, []int) {
+	min := -1
+	for i, rec := range records {
+		if rec == nil {
+			continue
+		} else if min == -1 {
+			min = i
+		} else if rec.Key < records[min].Key ||
+			(rec.Key == records[min].Key && rec.Timestamp.Unix() >
+				records[min].Timestamp.Unix()) {
+			min = i
+		}
+	}
+
+	var toRefresh []int
+	for i, rec := range records {
+		if rec != nil && rec.Key == records[min].Key {
+			toRefresh = append(toRefresh, i)
+		}
+	}
+	return min, toRefresh
+}
+
 func (lsm *LSMTree) CompactLevel(level int) {
-	if level+1 >= int(lsm.max_level) {
-		panic("LSM tree unable to perform compaction, max level reached")
+	if level >= int(lsm.max_level) {
+		return
 	}
 
 	if len(lsm.levels) == level {
@@ -135,7 +162,8 @@ func (lsm *LSMTree) CompactLevel(level int) {
 
 	toc_paths := lsm.LoadTocPaths(level)
 	iterators := make([]*ssTableIterator, len(toc_paths))
-	for i, toc_path := range lsm.LoadTocPaths(level) {
+	records := make([]*sstable.DataElement, len(toc_paths))
+	for i, toc_path := range toc_paths {
 		toc := sstable.GetTOC(toc_path)
 		iterators[i] = newIterator(toc)
 	}
@@ -149,27 +177,28 @@ func (lsm *LSMTree) CompactLevel(level int) {
 	var keys []string
 	var offsets []uint64
 	position := uint64(0)
+
+	for i, iterator := range iterators {
+		records[i] = iterator.Read()
+	}
 	for {
-		var records []sstable.DataElement
-		for _, iterator := range iterators {
-			if !iterator.End() {
-				records = append(records, iterator.Read())
-			}
-		}
-		if len(records) == 0 {
+		min, toRead := getMinRecord(records)
+		if len(toRead) == 0 {
 			break
 		}
 
-		sort.Slice(records, func(i, j int) bool {
-			return records[i].Key < records[j].Key
-		})
-		for _, rec := range records {
-			bf.Add(rec.Key)
-			keys = append(keys, rec.Key)
-			offsets = append(offsets, position)
-			position += writeRecord(w, rec)
-			w.Flush()
-			w.Reset(data_file)
+		rec := records[min]
+		// if !rec.Tombstone {
+		bf.Add(rec.Key)
+		keys = append(keys, rec.Key)
+		offsets = append(offsets, position)
+		position += writeRecord(w, rec)
+		w.Flush()
+		w.Reset(data_file)
+		// }
+
+		for _, i := range toRead {
+			records[i] = iterators[i].Read()
 		}
 	}
 	data_file.Close()
@@ -214,7 +243,9 @@ func (lsm *LSMTree) CompactLevel(level int) {
 		bffile.Close()
 	}
 	table.CreateTOC()
+	table.CreateMerkle()
 	DeleteDirContent(lsm.levels[level-1])
+
 	if lsm.LevelFull(level + 1) {
 		lsm.CompactLevel(level + 1)
 	}
@@ -232,7 +263,7 @@ func (lsm *LSMTree) GetFromMemtable(key string) ([]byte, bool) {
 	return nil, false
 }
 
-func (lsm *LSMTree) GetFromDisc(key string) ([]byte, bool) {
+func (lsm *LSMTree) GetFromDisc(key string) (data []byte, tombstone bool) {
 	for i := 1; i <= len(lsm.levels); i++ {
 		level := lsm.LoadTocPaths(i)
 		for j := len(level) - 1; j >= 0; j-- {
@@ -278,11 +309,20 @@ func (lsm *LSMTree) FlushMemtable() {
 }
 
 func DeleteDirContent(path string) {
-	d, _ := os.Open(path)
-	files, _ := d.ReadDir(0)
+	d, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	files, err := d.ReadDir(0)
+	if err != nil {
+		panic(err)
+	}
 	for _, v := range files {
 		file_path := fp.Join(path, v.Name())
-		os.Remove(file_path)
+		err := os.Remove(file_path)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 }
