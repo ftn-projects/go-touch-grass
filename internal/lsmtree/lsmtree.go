@@ -185,7 +185,7 @@ func (lsm *LSMTree) CompactLevel(level int) error {
 
 	data_file, _ := os.Create(table.Toc.DataPath)
 	w := bufio.NewWriter(data_file)
-
+	defer data_file.Close()
 	var keys []string
 	var offsets []uint64
 	position := uint64(0)
@@ -211,7 +211,7 @@ func (lsm *LSMTree) CompactLevel(level int) error {
 			records[i] = iterators[i].Read()
 		}
 	}
-	data_file.Close()
+
 	table.Toc.DataSize = position
 
 	// Creating index segment

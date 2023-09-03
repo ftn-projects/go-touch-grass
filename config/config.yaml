@@ -11,5 +11,5 @@ walsegmentsize: 2000
 tbucketresetduration: 7000
 tbucketmaxtokens: 5
 lsmmaxlevel: 4
-lsmlevelsize: 4
+lsmlevelsize: 2
 merklechunksize: 100
