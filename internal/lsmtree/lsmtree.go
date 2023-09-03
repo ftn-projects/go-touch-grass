@@ -135,8 +135,8 @@ func getMinRecord(records []*sstable.DataElement) (int, []int) {
 		} else if min == -1 {
 			min = i
 		} else if rec.Key < records[min].Key ||
-			(rec.Key == records[min].Key && rec.Timestamp.Unix() >
-				records[min].Timestamp.Unix()) {
+			(rec.Key == records[min].Key && rec.Timestamp.UnixNano() >
+				records[min].Timestamp.UnixNano()) {
 			min = i
 		}
 	}
