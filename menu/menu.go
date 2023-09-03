@@ -1,32 +1,37 @@
-package cli
+package menu
 
 import (
 	"bufio"
 	"fmt"
-	application "go-touch-grass/internal/app"
+	"go-touch-grass/internal/app"
 	"go-touch-grass/internal/util"
 	"os"
 )
 
-type MainMenu struct {
-	app *application.App
+type Menu struct {
 }
 
-func NewMenu(app *application.App) *MainMenu {
-	return &MainMenu{app}
+func New() *Menu {
+	return &Menu{}
 }
 
-func (m *MainMenu) PrintMenu() {
-	fmt.Println("---------------------")
+func (m *Menu) PrintMenu() {
+	fmt.Println("--------- MENI ---------")
 	fmt.Println("1 Upisi podatak")
 	fmt.Println("2 Pronadji podatak")
 	fmt.Println("3 Obrisi podatak")
 	fmt.Println("4 Pokreni kompakciju")
 	fmt.Println("q Izadji")
-	fmt.Println("---------------------")
+	fmt.Println("------------------------")
 }
 
-func (m *MainMenu) Show() {
+func (m *Menu) Show() {
+	app, err := app.New()
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+
 	sc := bufio.NewScanner(os.Stdin)
 	for {
 		m.PrintMenu()
@@ -35,13 +40,13 @@ func (m *MainMenu) Show() {
 
 		switch c {
 		case "1":
-			m.HandlePut(sc)
+			m.HandlePut(sc, app)
 		case "2":
-			m.HandleGet(sc)
+			m.HandleGet(sc, app)
 		case "3":
-			m.HandleDelete(sc)
+			m.HandleDelete(sc, app)
 		case "4":
-			m.HandleCompaction(sc)
+			m.HandleCompaction(sc, app)
 		case "q":
 			return
 		default:
@@ -51,13 +56,13 @@ func (m *MainMenu) Show() {
 	}
 }
 
-func (m *MainMenu) HandlePut(sc *bufio.Scanner) {
+func (m *Menu) HandlePut(sc *bufio.Scanner, app *app.App) {
 	fmt.Print("Unesite kljuc: ")
 	key := util.ScanString(sc)
 	fmt.Print("Unesite podatke: ")
 	value := util.ScanString(sc)
 
-	err := m.app.Put(key, []byte(value))
+	err := app.Put(key, []byte(value))
 	if err != nil {
 		util.Print("greska: ", err.Error())
 	} else {
@@ -65,25 +70,25 @@ func (m *MainMenu) HandlePut(sc *bufio.Scanner) {
 	}
 }
 
-func (m *MainMenu) HandleGet(sc *bufio.Scanner) {
+func (m *Menu) HandleGet(sc *bufio.Scanner, app *app.App) {
 	fmt.Print("Unesite kljuc: ")
 	key := util.ScanString(sc)
 
-	data, err := m.app.Get(key)
+	data, err := app.Get(key)
 	if err != nil {
 		util.Print("greska: ", err.Error())
 	} else if data == nil {
 		util.Print("Podaci nisu pronadjeni.")
 	} else {
-		util.Print(key, " : ", "[", string(data), "]")
+		util.Print("[", key, "]", ":", "[", string(data), "]")
 	}
 }
 
-func (m *MainMenu) HandleDelete(sc *bufio.Scanner) {
+func (m *Menu) HandleDelete(sc *bufio.Scanner, app *app.App) {
 	fmt.Print("Unesite kljuc: ")
 	key := util.ScanString(sc)
 
-	err := m.app.Delete(key)
+	err := app.Delete(key)
 	if err != nil {
 		util.Print("greska: ", err.Error())
 	} else {
@@ -91,7 +96,7 @@ func (m *MainMenu) HandleDelete(sc *bufio.Scanner) {
 	}
 }
 
-func (m *MainMenu) HandleCompaction(sc *bufio.Scanner) {
+func (m *Menu) HandleCompaction(sc *bufio.Scanner, app *app.App) {
 	fmt.Print("Potvrda kompakcije (Y/n): ")
 	c := util.ScanLowerString(sc)
 
@@ -102,7 +107,7 @@ func (m *MainMenu) HandleCompaction(sc *bufio.Scanner) {
 		return
 	}
 
-	err := m.app.InitiateCompaction()
+	err := app.InitiateCompaction()
 	if err != nil {
 		fmt.Println("greska: ", err.Error())
 	} else {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 
 	"gopkg.in/yaml.v2"
@@ -41,7 +42,37 @@ func tryLoad(path string) (*Config, bool) {
 	return &c, err == nil
 }
 
-func getDefault() *Config {
+func validConfig(c *Config) error {
+	err_message := "neispravan config fajl "
+	ints := []int64{
+		int64(c.SkiplistMaxHeight),
+		int64(c.BtreeDegree),
+		int64(c.MemtableCap),
+		int64(c.SummaryStep),
+		int64(c.CacheSize),
+		int64(c.WalLowWaterMark),
+		c.WalSegmentSize,
+		c.TBucketResetDuration,
+		int64(c.TBucketMaxTokens),
+		int64(c.LsmMaxLevel),
+		int64(c.LsmLevelSize),
+		int64(c.MerkleChunkSize),
+	}
+	for _, v := range ints {
+		if v <= 0 {
+			return errors.New(err_message + "(negativan broj)")
+		}
+	}
+	if c.FilterPrecision <= 0 || c.FilterPrecision >= 1 {
+		return errors.New(err_message + "(FilterPrecision)")
+	}
+	if c.MemtableContainer != "skiplist" && c.MemtableContainer != "btree" {
+		return errors.New(err_message + "(MemtableContainer)")
+	}
+	return nil
+}
+
+func GetDefault() *Config {
 	return &Config{
 		SkiplistMaxHeight:    10,
 		BtreeDegree:          4,
@@ -61,13 +92,18 @@ func getDefault() *Config {
 	}
 }
 
-func New(path string) *Config {
+func New(path string) (*Config, error) {
 	conf, ok := tryLoad(path)
 	if !ok {
-		conf = getDefault()
+		conf = GetDefault()
+	}
+
+	err := validConfig(conf)
+	if err != nil {
+		return nil, err
 	}
 
 	conf.path = path
 	conf.Save()
-	return conf
+	return conf, nil
 }

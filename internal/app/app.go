@@ -20,8 +20,12 @@ type App struct {
 	tbucket  *tbucket.TBucket
 }
 
-func New() *App {
-	config := conf.New(getConfigPath())
+func New() (*App, error) {
+	config, err := conf.New(getConfigPath())
+	if err != nil {
+		return nil, err
+	}
+
 	app := &App{
 		datapath: getDataPath(),
 		config:   config,
@@ -31,7 +35,7 @@ func New() *App {
 		tbucket:  tbucket.New(config),
 	}
 	app.StartRecovery()
-	return app
+	return app, nil
 }
 
 func (app *App) CanMakeQuery() error {

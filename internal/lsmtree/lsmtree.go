@@ -151,7 +151,9 @@ func getMinRecord(records []*sstable.DataElement) (int, []int) {
 }
 
 func (lsm *LSMTree) CompactLevel(level int) error {
-	if level >= int(lsm.max_level) {
+	toc_paths := lsm.LoadTocPaths(level)
+
+	if level >= int(lsm.max_level) || len(toc_paths) != int(lsm.level_size) {
 		return nil
 	}
 
@@ -163,7 +165,6 @@ func (lsm *LSMTree) CompactLevel(level int) error {
 		return err
 	}
 
-	toc_paths := lsm.LoadTocPaths(level)
 	iterators := make([]*ssTableIterator, len(toc_paths))
 	records := make([]*sstable.DataElement, len(toc_paths))
 	for i, toc_path := range toc_paths {

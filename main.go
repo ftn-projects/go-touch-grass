@@ -1,11 +1,9 @@
 package main
 
 import (
-	"go-touch-grass/cli"
-	"go-touch-grass/internal/app"
+	"go-touch-grass/menu"
 )
 
 func main() {
-	application := app.New()
-	cli.NewMenu(application).Show()
+	menu.New().Show()
 }
