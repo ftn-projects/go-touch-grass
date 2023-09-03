@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	conf "go-touch-grass/config"
 	"go-touch-grass/internal/cache"
 	"go-touch-grass/internal/lsmtree"
@@ -8,6 +9,7 @@ import (
 	"go-touch-grass/internal/wal"
 	"os"
 	fp "path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -121,8 +123,16 @@ func (app *App) Delete(key string) (err error) {
 	return
 }
 
-func (app *App) InitiateCompaction() error {
-	return app.lsm.CompactLevel(1)
+func (app *App) InitiateCompaction(level int) error {
+	if app.lsm.LevelEmpty(level) {
+		return errors.New("uneti nivo je prazan (nema SSTabeli za kompakciju)")
+	} else if level > app.lsm.LevelCount() {
+		max := strconv.FormatInt(int64(app.lsm.LevelCount()), 10)
+		return errors.New("uneti nivo je veci od trenutno maksimalnog (" + max + ")")
+	} else if level == app.config.LsmMaxLevel {
+		return errors.New("kompakcija poslednjeg nivoa nije moguca")
+	}
+	return app.lsm.CompactLevel(level)
 }
 
 func (app *App) CleanupWal() {

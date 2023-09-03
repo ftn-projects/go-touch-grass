@@ -52,6 +52,14 @@ func (lsm *LSMTree) LevelFull(level int) bool {
 	return len(lsm.LoadTocPaths(level)) >= int(lsm.level_size)
 }
 
+func (lsm *LSMTree) LevelEmpty(level int) bool {
+	return len(lsm.LoadTocPaths(level)) == 0
+}
+
+func (lsm *LSMTree) LevelCount() int {
+	return len(lsm.levels)
+}
+
 func (lsm *LSMTree) CreateNewLevel() {
 	max_num_lvl := lsm.getMaxLevelNumber() + 1
 	if max_num_lvl >= lsm.conf.LsmMaxLevel {
@@ -153,7 +161,7 @@ func getMinRecord(records []*sstable.DataElement) (int, []int) {
 func (lsm *LSMTree) CompactLevel(level int) error {
 	toc_paths := lsm.LoadTocPaths(level)
 
-	if level >= int(lsm.max_level) || len(toc_paths) != int(lsm.level_size) {
+	if level >= int(lsm.max_level) {
 		return nil
 	}
 

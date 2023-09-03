@@ -3,6 +3,7 @@ package util
 import (
 	"bufio"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +14,14 @@ func ScanString(sc *bufio.Scanner) string {
 
 func ScanLowerString(sc *bufio.Scanner) string {
 	return strings.ToLower(ScanString(sc))
+}
+
+func ScanInt(sc *bufio.Scanner) int {
+	i, err := strconv.Atoi(ScanString(sc))
+	if err != nil || i <= 0 {
+		return -1
+	}
+	return i
 }
 
 func Print(values ...string) {

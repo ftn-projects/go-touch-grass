@@ -62,6 +62,11 @@ func (m *Menu) Show() {
 func (m *Menu) HandlePut(sc *bufio.Scanner, app *app.App) {
 	fmt.Print("Unesite kljuc: ")
 	key := util.ScanString(sc)
+	if key == "" {
+		fmt.Println("greska: neispravan kljuc")
+		return
+	}
+
 	fmt.Print("Unesite podatke: ")
 	value := util.ScanString(sc)
 
@@ -76,6 +81,10 @@ func (m *Menu) HandlePut(sc *bufio.Scanner, app *app.App) {
 func (m *Menu) HandleGet(sc *bufio.Scanner, app *app.App) {
 	fmt.Print("Unesite kljuc: ")
 	key := util.ScanString(sc)
+	if key == "" {
+		fmt.Println("greska: neispravan kljuc")
+		return
+	}
 
 	data, err := app.Get(key)
 	if err != nil {
@@ -90,6 +99,10 @@ func (m *Menu) HandleGet(sc *bufio.Scanner, app *app.App) {
 func (m *Menu) HandleDelete(sc *bufio.Scanner, app *app.App) {
 	fmt.Print("Unesite kljuc: ")
 	key := util.ScanString(sc)
+	if key == "" {
+		fmt.Println("greska: neispravan kljuc")
+		return
+	}
 
 	err := app.Delete(key)
 	if err != nil {
@@ -100,17 +113,14 @@ func (m *Menu) HandleDelete(sc *bufio.Scanner, app *app.App) {
 }
 
 func (m *Menu) HandleCompaction(sc *bufio.Scanner, app *app.App) {
-	fmt.Print("Potvrda kompakcije (Y/n): ")
-	c := util.ScanLowerString(sc)
-
-	if c == "n" {
-		return
-	} else if c != "y" {
-		fmt.Println("greska: nepostojeca opcija")
+	fmt.Print("Unesite nivo za kompakciju: ")
+	c := util.ScanInt(sc)
+	if c == -1 {
+		fmt.Println("greska: niste uneli ceo pozitivan broj")
 		return
 	}
 
-	err := app.InitiateCompaction()
+	err := app.InitiateCompaction(c)
 	if err != nil {
 		fmt.Println("greska: ", err.Error())
 	} else {
@@ -128,6 +138,5 @@ func (m *Menu) HandleWalCleanup(sc *bufio.Scanner, app *app.App) {
 		fmt.Println("greska: nepostojeca opcija")
 		return
 	}
-
 	app.CleanupWal()
 }
