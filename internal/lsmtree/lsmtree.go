@@ -32,7 +32,13 @@ func formatLevel(level int) string {
 
 func (lsm *LSMTree) LoadTocPaths(level int) []string {
 	tocs := make([]string, 0)
-	folder, _ := os.Open(lsm.levels[level-1])
+	if len(lsm.levels) < level {
+		return []string{}
+	}
+	folder, err := os.Open(lsm.levels[level-1])
+	if err != nil {
+		return []string{}
+	}
 	content, err := folder.ReadDir(0)
 	if err != nil {
 		return []string{}

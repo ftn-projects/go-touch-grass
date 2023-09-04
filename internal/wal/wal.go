@@ -75,7 +75,7 @@ type WAL struct {
 func New(logPath string, config *config.Config) *WAL {
 	os.MkdirAll(logPath, 0777)
 
-	files, _ := fp.Glob(fp.Join(logPath, "wal_"))
+	files, _ := fp.Glob(fp.Join(logPath, "wal_*"))
 	highestIndex := findHighestIndex(files)
 
 	// Create a new WAL with the next index
@@ -280,9 +280,9 @@ func (w *WAL) CleanUpWal() {
 		return
 	}
 
-	//If there is less than 20 wal segments we won't remove any
-	if len(files) < 20 {
-		fmt.Println("Nema dovoljno segmenata (20) za ciscenje.")
+	//If there is less than w.lwm wal segments we won't remove any
+	if len(files) <= w.lwm {
+		fmt.Println("Nema dovoljno segmenata za ciscenje.")
 		return
 	}
 
@@ -311,6 +311,7 @@ func (w *WAL) CleanUpWal() {
 			fmt.Println(err)
 			return
 		}
+		w.index = newIndex
 	}
 }
 
@@ -422,6 +423,7 @@ func (w *WAL) Recover() ([]Record, error) {
 		}
 		for j := len(segment) - 1; j >= 0; j-- {
 			if segment[j].FlushFlag {
+				slices.Reverse(recovery_log)
 				return recovery_log, nil
 			}
 			recovery_log = append(recovery_log, segment[j])

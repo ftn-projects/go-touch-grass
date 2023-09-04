@@ -61,7 +61,11 @@ func (app *App) StartRecovery() (err error) {
 		return nil
 	}
 	for _, v := range recovery_log {
-		app.lsm.Put(string(v.Key), v.Value)
+		if v.Tombstone {
+			app.lsm.Delete(string(v.Key))
+		} else {
+			app.lsm.Put(string(v.Key), v.Value)
+		}
 	}
 	return nil
 }
@@ -122,6 +126,12 @@ func (app *App) Delete(key string) (err error) {
 		return
 	}
 
+	wal_record := wal.NewRecord(time.Now(), true, []byte(key), nil)
+	err = app.wal.WriteRecord(*wal_record)
+	if err != nil {
+		return
+	}
+
 	err, flushed := app.lsm.Delete(key)
 	if flushed {
 		app.wal.WriteRecord(wal.Record{
@@ -135,7 +145,7 @@ func (app *App) Delete(key string) (err error) {
 
 func (app *App) InitiateCompaction(level int) error {
 	if app.lsm.LevelEmpty(level) {
-		return errors.New("uneti nivo je prazan (nema SSTabeli za kompakciju)")
+		return errors.New("uneti nivo je prazan (nema SSTabela za kompakciju)")
 	} else if level > app.lsm.LevelCount() {
 		max := strconv.FormatInt(int64(app.lsm.LevelCount()), 10)
 		return errors.New("uneti nivo je veci od trenutno maksimalnog (" + max + ")")
