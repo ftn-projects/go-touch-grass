@@ -76,18 +76,18 @@ func GetDefault() *Config {
 	return &Config{
 		SkiplistMaxHeight:    10,
 		BtreeDegree:          4,
-		MemtableCap:          2,
+		MemtableCap:          3,
 		MemtableContainer:    "btree",
 		SSTableAllInOne:      true,
 		FilterPrecision:      0.01,
 		SummaryStep:          5,
-		CacheSize:            10,
-		WalLowWaterMark:      10,
-		WalSegmentSize:       5,
+		CacheSize:            4,
+		WalLowWaterMark:      5,
+		WalSegmentSize:       256,
 		TBucketResetDuration: 7000,
 		TBucketMaxTokens:     5,
 		LsmMaxLevel:          4,
-		LsmLevelSize:         4,
+		LsmLevelSize:         2,
 		MerkleChunkSize:      100,
 	}
 }
